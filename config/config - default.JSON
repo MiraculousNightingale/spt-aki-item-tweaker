@@ -1,0 +1,85 @@
+{
+	"logger": {
+		"verbose": true
+	},
+	"multipliers": {
+		"globals": {
+			"RecoilHandDamping": 1,
+			"RecoilDamping": 1,
+			"RecoilConvergenceMult": 1,
+			"RecoilVertBonus": 1,
+			"RecoilBackBonus": 1
+		},
+		"byWeaponClass": {
+			"pistol": {
+				"CameraRecoil": 1,
+				"CameraSnap": 1,
+				"RecoilForceUp": 1,
+				"RecoilForceBack": 1,
+				"Convergence": 1,
+				"RecolDispersion": 1
+			},
+			"smg": {
+				"CameraRecoil": 1,
+				"CameraSnap": 1,
+				"RecoilForceUp": 1,
+				"RecoilForceBack": 1,
+				"Convergence": 1,
+				"RecolDispersion": 1
+			},
+			"shotgun": {
+				"CameraRecoil": 1,
+				"CameraSnap": 1,
+				"RecoilForceUp": 1,
+				"RecoilForceBack": 1,
+				"Convergence": 1,
+				"RecolDispersion": 1
+			},
+			"assaultRifle": {
+				"CameraRecoil": 1,
+				"CameraSnap": 1,
+				"RecoilForceUp": 1,
+				"RecoilForceBack": 1,
+				"Convergence": 1,
+				"RecolDispersion": 1
+			},
+			"assaultCarbine": {
+				"CameraRecoil": 1,
+				"CameraSnap": 1,
+				"RecoilForceUp": 1,
+				"RecoilForceBack": 1,
+				"Convergence": 1,
+				"RecolDispersion": 1
+			},
+			"machinegun": {
+				"CameraRecoil": 1,
+				"CameraSnap": 1,
+				"RecoilForceUp": 1,
+				"RecoilForceBack": 1,
+				"Convergence": 1,
+				"RecolDispersion": 1
+			},
+			"marksmanRifle": {
+				"CameraRecoil": 1,
+				"CameraSnap": 1,
+				"RecoilForceUp": 1,
+				"RecoilForceBack": 1,
+				"Convergence": 1,
+				"RecolDispersion": 1
+			},
+			"sniperRifle": {
+				"CameraRecoil": 1,
+				"CameraSnap": 1,
+				"RecoilForceUp": 1,
+				"RecoilForceBack": 1,
+				"Convergence": 1,
+				"RecolDispersion": 1
+			}
+		}
+	},
+	"manualOverwrite": {
+		"globals": {},
+		"byWeaponClass": {},
+		"byWeaponName": {}
+	}
+}

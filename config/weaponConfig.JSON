@@ -1,0 +1,33 @@
+{
+    "multipliers": {
+		"globals": {
+			"RecoilVertBonus": 0,
+			"RecoilBackBonus": 0
+		},
+		"byWeaponClass": {
+			"marksmanRifle": {
+				"RecolDispersion": 0.68
+			}
+		},
+		"byWeaponName": {
+		}
+	},
+	"manualOverwrite": {
+		"globals": {
+			"RecoilVertBonus": 0,
+			"RecoilBackBonus": 0
+		},
+		"byWeaponClass": {
+			"pistol": {
+				"RecoilForceUp": 1,
+				"RecoilForceBack": 2
+			}
+		},
+		"byWeaponName": {
+			"weapon_dsa_sa58_762x51":{
+				"RecoilForceUp": 4,
+				"RecoilForceBack": 8
+			}
+		}
+	}
+}
