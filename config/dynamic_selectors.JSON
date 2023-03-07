@@ -1,0 +1,18 @@
+{
+    "light_armors": {
+        "filterProperty": "ArmorType",
+        "filterValues": [
+            "Light"
+        ],
+        "set": {
+            "Durability": 228,
+            "MaxDurability": 228
+        }
+    },
+    "light_armors_have_no_mousePenalty":{
+        "filterProperty": "ArmorType",
+        "set": {
+            "mousePenalty": 0
+        }
+    }
+}

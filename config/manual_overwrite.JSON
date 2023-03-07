@@ -1,0 +1,21 @@
+{
+    "helmet_altyn_face_shield": {
+        "multiply": {
+            "Durability": 2,
+            "MaxDurability": 2
+        },
+        "set": {
+            "armorClass": 6
+        }
+    },
+    "helmet_altyn": {
+        "set": {
+            "armorClass": 6
+        }
+    },
+    "helmet_ratnik_6B47": {
+        "set": {
+            "mousePenalty": -5
+        }
+    }
+}
