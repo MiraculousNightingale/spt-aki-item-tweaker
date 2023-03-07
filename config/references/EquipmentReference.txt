@@ -1,0 +1,15 @@
+Potential ArmorType values:
+    "None"
+    "Light"
+    "Heavy"
+
+Potentially interesting properties to modify for armor(and maybe other equipment):
+    "Durability"
+    "MaxDurability"
+    "armorZone" <- is an array, be sure to overwrite it's value with "set" method with another array e.g. Zabralo's "armorZone": ["LeftArm","RightArm","Chest","Stomach"]
+    "ArmorType"
+    "armorClass"
+    "speedPenaltyPercent"
+    "mousePenalty"
+    "weaponErgonomicPenalty"
+

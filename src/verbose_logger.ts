@@ -3,6 +3,18 @@ import { ILogger } from "@spt-aki/models/spt/utils/ILogger";
 
 import modConfig from "../config/config.json";
 
+/**
+ * An upscaled logger which has optional and explicit logging funcions.
+ * Optional functions output a message based on the "verbose" value in config.json:
+ * 
+ * { 
+ *      "logger": {
+ *          "verbose":true/false
+ *      } 
+ * }
+ * 
+ * Version 230228
+ */
 class VerboseLogger 
 {
     private logger: ILogger;

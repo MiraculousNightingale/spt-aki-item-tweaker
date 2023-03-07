@@ -4,12 +4,6 @@ import { Aiming } from "@spt-aki/models/eft/common/IGlobals";
 import { IPostDBLoadMod } from "@spt-aki/models/external/IPostDBLoadMod";
 import { DependencyContainer } from "tsyringe";
 
-
-// Mod Configs
-import modConfig from "../config/config.json";
-import weaponConfig from "../config/weaponConfig.json";
-import armorConfig from "../config/armorConfig.json";
-
 import dynamicSelectors from "../config/dynamic_selectors.json";
 import manualOverwrite from "../config/manual_overwrite.json";
 
@@ -17,22 +11,6 @@ import { VerboseLogger } from "./verbose_logger";
 import { Applicator } from "./applicator";
 import { LogTextColor } from "@spt-aki/models/spt/logging/LogTextColor";
 import { LogBackgroundColor } from "@spt-aki/models/spt/logging/LogBackgroundColor";
-
-// Config Based Types
-// Legacy types from old configs
-type GlobalMultipliers = typeof weaponConfig.multipliers.globals;
-type WeaponClassMultipliers = typeof weaponConfig.multipliers.byWeaponClass;
-type WeaponNameMultipliers = typeof weaponConfig.multipliers.byWeaponName;
-
-type GlobalValues = typeof weaponConfig.manualOverwrite.globals;
-type WeaponClassValues = typeof weaponConfig.manualOverwrite.byWeaponClass;
-type WeaponNameValues = typeof weaponConfig.manualOverwrite.byWeaponName;
-
-type ArmorTypeMultipliers = typeof armorConfig.multipliers.byArmorType;
-type ArmorNameMultipliers = typeof armorConfig.multipliers.byArmorName;
-
-type ArmorTypeValues = typeof armorConfig.manualOverwrite.byArmorType;
-type ArmorNameValues = typeof armorConfig.manualOverwrite.byArmorName;
 
 type Selector = {
     filterProperty: string;
@@ -47,7 +25,7 @@ type Overwrite = {
     set?: object;
 }
 
-class RecoilTweaks implements IPostDBLoadMod 
+class ItemTweaker implements IPostDBLoadMod 
 {
     private logger: VerboseLogger;
     private applicator: Applicator;
@@ -57,13 +35,12 @@ class RecoilTweaks implements IPostDBLoadMod
         this.logger = new VerboseLogger(container);
         this.applicator = new Applicator(this.logger);
 
-        this.logger.explicitLog(" === [ Item Tweaker ] === ", LogTextColor.BLACK, LogBackgroundColor.WHITE);
+        this.logger.explicitLog("Item Tweaker: Starting...", LogTextColor.BLACK, LogBackgroundColor.WHITE);
 
         this.logger.info("Initialization...");
         const databaseServer = container.resolve<DatabaseServer>("DatabaseServer");
         const tables = databaseServer.getTables();
         const dbItems: IDatabaseTables = tables.templates.items;
-        //const globals: Aiming = tables.globals.config.Aiming; - Transitioned to a different mod
 
         // Collect selectors meta to check for intersections
         const selectorMetaData = {};
@@ -95,10 +72,10 @@ class RecoilTweaks implements IPostDBLoadMod
                     };
                 }
                 else 
-                    this.logger.explicitWarning(`[WARNING] Selector "${selectorKey}" has no matches. Check if "filterProperty"(${selector.filterProperty}) and "filterValues"(${selector.filterValues.toString().replace(/,/g, ", ")}) are correct.`);
+                    this.logger.explicitWarning(`[WARNING] "${selectorKey}" has no matches. Check if "filterProperty"(${selector.filterProperty}) and "filterValues"(${selector.filterValues.toString().replace(/,/g, ", ")}) are correct.`);
             }
             else
-                this.logger.explicitError(`[ERROR] Selector "${selectorKey}" properties "filterProperty"(${filterProperty}) and "filterValues"(${filterValues}) have to be defined!`);
+                this.logger.explicitError(`[ERROR] "${selectorKey}" properties "filterProperty"(${filterProperty}) and "filterValues"(${filterValues}) have to be defined!`);
         }
 
         // Collect overwrite meta
@@ -223,128 +200,11 @@ class RecoilTweaks implements IPostDBLoadMod
                     changeCount += this.applyItemChanges(dbItems, overwrite.set, "_id", [itemId], valueApplicator)[0];
                 }
                 if (changeCount > 0)
-                    this.logger.explicitInfo(`Manual Overwrite made ${changeCount} changes to ${itemName}`);
+                    this.logger.explicitInfo(`Manual Overwrite made ${changeCount} changes to "${itemName}"`);
             }
         }
 
-        this.logger.explicitLog(" === COMPLETED === ", LogTextColor.BLACK, LogBackgroundColor.WHITE);
-    }
-
-
-    // Legacy code, remove later
-    private applyWeaponMultipliers(dbItems, globals, actionOrder: number): [number, number] | number
-    {
-        const globalMults: GlobalMultipliers = weaponConfig.multipliers.globals;
-        // A bound applicator function to pass down to 'this.applyItemChanges'
-        const applicator = this.applicator.tryToApplyAllItemMultipliers.bind(this.applicator);
-        this.logger.info(`${actionOrder}. Applying Weapon Multipliers...`);
-
-        // GLOBAL PARAMS
-        this.logger.info(`${actionOrder}.1 Global Parameters;`);
-        // Check if RecoilCrank is in the multipliers section
-        // A pretty specific check but i suppose it should be left here for now
-        if ("RecoilCrank" in globalMults) 
-        {
-            this.logger.explicitError("[Error] Recoil crank is boolean and can't be multiplied. Remove it from the multipliers section in the config.");
-            return -1;
-        }
-        let globalsChangeCount = 0;
-        globalsChangeCount += this.applicator.tryToApplyAllMultipliers(globals, globalMults);
-        this.logger.info(`Successfully changed ${globalsChangeCount} global parameters.`)
-
-        // BY WEAPON CLASS
-        this.logger.info(`${actionOrder}.2 By Weapon Class;`);
-        const weapClassMults: WeaponClassMultipliers = weaponConfig.multipliers.byWeaponClass;
-        const [byClassChangeCount, byClassWeaponCount] = this.applyItemChanges(dbItems, weapClassMults, "weapClass", applicator);
-        this.logger.info(`Successfully changed ${byClassChangeCount} weapon attributes for ${byClassWeaponCount} weapons based on 'weapClass'`);
-
-        // BY WEAPON NAME
-        this.logger.info(`${actionOrder}.3 By Weapon Name;`);
-        const weapNameMults: WeaponNameMultipliers = weaponConfig.multipliers.byWeaponName;
-        const [byNameChangeCount, byNameWeaponCount] = this.applyItemChanges(dbItems, weapNameMults, "_name", applicator);
-        this.logger.info(`Successfully changed ${byNameChangeCount} weapon attributes for ${byNameWeaponCount} weapons based on '_name'`);
-
-        return [globalsChangeCount + byClassChangeCount + byNameChangeCount, byClassWeaponCount+ byNameWeaponCount];
-    }
-
-    private applyWeaponValues(dbItems, globals, actionOrder: number): [number, number] | number
-    {
-        const globalValues: GlobalValues = weaponConfig.manualOverwrite.globals;
-        // A bound applicator function to pass down to 'this.applyItemChanges'
-        const applicator = this.applicator.tryToApplyAllItemValues.bind(this.applicator);
-        this.logger.info(`${actionOrder}. Applying Weapon Values...`);
-
-        // GLOBAL PARAMS
-        this.logger.info(`${actionOrder}.1 Global Parameters;`);
-        // Check if RecoilCrank is in the multipliers section
-        // A pretty specific check but i suppose it should be left here for now
-        if ("RecoilCrank" in globalValues)
-        {
-            if (typeof globalValues.RecoilCrank != "boolean")
-            {
-                this.logger.explicitError("[Error] Recoil crank has to be boolean.");
-                return -1;
-            }
-        }
-        let globalsChangeCount = 0;
-        globalsChangeCount += this.applicator.tryToApplyAllMultipliers(globals, globalValues);
-        this.logger.info(`Successfully changed ${globalsChangeCount} global parameters.`);
-
-        // BY WEAPON CLASS
-        this.logger.info(`${actionOrder}.2 By Weapon Class;`);
-        const weapClassValues: WeaponClassValues = weaponConfig.manualOverwrite.byWeaponClass;
-        const [byClassChangeCount, byClassWeaponCount] = this.applyItemChanges(dbItems, weapClassValues, "weapClass", applicator);
-        this.logger.info(`Successfully changed ${byClassChangeCount} weapon attributes for ${byClassWeaponCount} weapons based on 'weapClass'`);
-
-        // BY WEAPON NAME
-        this.logger.info(`${actionOrder}.3 By Weapon Name;`);
-        const weapNameValues: WeaponNameValues = weaponConfig.manualOverwrite.byWeaponName;
-        const [byNameChangeCount, byNameWeaponCount] = this.applyItemChanges(dbItems, weapNameValues, "_name", applicator);
-        this.logger.info(`Successfully changed ${byNameChangeCount} weapon attributes for ${byNameWeaponCount} weapons based on '_name'`);
-
-        return [globalsChangeCount + byClassChangeCount + byNameChangeCount, byClassWeaponCount + byNameWeaponCount];
-    }
-
-    private applyArmorMultipliers(dbItems, actionOrder: number): [number, number] | number
-    {
-        // A bound applicator function to pass down to 'this.applyItemChanges'
-        const applicator = this.applicator.tryToApplyAllItemMultipliers.bind(this.applicator);
-        this.logger.info(`${actionOrder}. Applying Amour Multipliers...`);
-
-        // BY ARMOR TYPE
-        this.logger.info(`${actionOrder}.1 By Armor Type`);
-        const armorClassMults: ArmorTypeMultipliers = armorConfig.multipliers.byArmorType;
-        const [byTypeChangeCount, byTypeArmorCount] = this.applyItemChanges(dbItems, armorClassMults, "ArmorType", applicator);
-        this.logger.info(`Successfully changed ${byTypeChangeCount} armor attributes for ${byTypeArmorCount} armors based on 'ArmorType'`);
-
-        // BY ARMOUR NAME
-        this.logger.info(`${actionOrder}.2 By Armor Name`);
-        const armorNameMults: ArmorNameMultipliers = armorConfig.multipliers.byArmorName;
-        const [byNameChangeCount, byNameArmorCount] = this.applyItemChanges(dbItems, armorNameMults, "_name", applicator);
-        this.logger.info(`Successfully changed ${byNameChangeCount} armor attributes for ${byNameArmorCount} armors based on '_name'`);
-
-        return [byTypeChangeCount + byNameChangeCount, byTypeArmorCount + byNameArmorCount];
-    }
-
-    private applyArmorValues(dbItems, actionOrder: number): [number, number] | number
-    {
-        // A bound applicator function to pass down to 'this.applyItemChanges'
-        const applicator = this.applicator.tryToApplyAllItemValues.bind(this.applicator);
-        this.logger.info(`${actionOrder}. Applying Armor Values...`);
-
-        // BY ARMOR TYPE
-        this.logger.info(`${actionOrder}.1 By Armor Type`);
-        const armorClassValues: ArmorTypeValues = armorConfig.manualOverwrite.byArmorType;
-        const [byTypeChangeCount, byTypeArmorCount] = this.applyItemChanges(dbItems, armorClassValues, "ArmorType", applicator);
-        this.logger.info(`Successfully changed ${byTypeChangeCount} armor attributes for ${byTypeArmorCount} armors based on 'ArmorType'`);
-
-        // BY ARMOUR NAME
-        this.logger.info(`${actionOrder}.2 By Armor Name`);
-        const armorNameValues: ArmorNameValues = armorConfig.manualOverwrite.byArmorName;
-        const [byNameChangeCount, byNameArmorCount] = this.applyItemChanges(dbItems, armorNameValues, "_name", applicator);
-        this.logger.info(`Successfully changed ${byNameChangeCount} armor attributes for ${byNameArmorCount} armors based on '_name'`);
-
-        return [byTypeChangeCount + byNameChangeCount, byTypeArmorCount + byNameArmorCount];
+        this.logger.explicitLog("Item Tweaker: Completed", LogTextColor.BLACK, LogBackgroundColor.WHITE);
     }
 
     /**
@@ -441,4 +301,4 @@ class RecoilTweaks implements IPostDBLoadMod
     }
 }
 
-module.exports = { mod: new RecoilTweaks() };
+module.exports = { mod: new ItemTweaker() };

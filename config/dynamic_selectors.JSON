@@ -1,18 +1,61 @@
 {
-    "light_armors": {
+    "armors_mousePenalty_to_zero": {
         "filterProperty": "ArmorType",
         "filterValues": [
-            "Light"
+            "Light",
+            "Heavy",
+            "None"
         ],
         "set": {
-            "Durability": 228,
-            "MaxDurability": 228
+            "mousePenalty": 0
         }
     },
-    "light_armors_have_no_mousePenalty":{
-        "filterProperty": "ArmorType",
-        "set": {
-            "mousePenalty": 0
+    "dmrs_recoil_tweaks": {
+        "filterProperty": "weapClass",
+        "filterValues": [
+            "marksmanRifle"
+        ],
+        "multiply": {
+            "RecolDispersion": 0.68
+        }
+    },
+    "reduce_all_weapons_camera_recoil": {
+        "filterProperty": "weapUseType",
+        "filterValues": [
+            "primary",
+            "secondary"
+        ],
+        "multiply": {
+            "CameraRecoil": 0.75
+        }
+    },
+    "decrease_food_animations_tenfold":{
+        "filterProperty": "_parent",
+        "filterValues": [
+            "5448e8d04bdc2ddf718b4569"
+        ],
+        "multiply":{
+            "foodUseTime": 0.01
+        }
+    },
+    "increase_water_animations_fifteenfold":{
+        "filterProperty": "_parent",
+        "filterValues": [
+            "5448e8d64bdc2dce718b4568"
+        ],
+        "multiply":{
+            "foodUseTime": 15
+        }
+    },
+    "speedup_med_anims":{
+        "filterProperty": "_parent",
+        "filterValues": [
+            "5448f3ac4bdc2dce718b4569",
+            "5448f39d4bdc2d0a728b4568",
+            "5448f3a14bdc2d27728b4569"
+        ],
+        "multiply": {
+            "medUseTime": 0.1
         }
     }
 }

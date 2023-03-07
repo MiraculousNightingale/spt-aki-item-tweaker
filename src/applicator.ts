@@ -1,5 +1,13 @@
 import { VerboseLogger } from "./verbose_logger";
 
+/**
+ * Utility class which applies values and multipliers to target objects from source objects with different options.
+ * As a rule returns a number of applied changes.
+ * 
+ * Requires a VerboseLogger to optionally output messages based on a config value.
+ * 
+ * Version 230307
+ */
 class Applicator 
 {
     private logger: VerboseLogger;

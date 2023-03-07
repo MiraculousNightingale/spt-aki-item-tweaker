@@ -1,0 +1,31 @@
+
+If you want select all weapons you can do it by using the "weapUseType" or "weapClass" property and copy pasting all their possible values to cover everything.
+
+Potential "weapUseType" values:
+    "primary"
+    "secondary"
+
+Potential "weapClass" values:
+    "pistol"
+    "smg"
+    "shotgun"
+    "assaultRifle"
+    "assaultCarbine"
+    "machinegun"
+    "marksmanRifle"
+    "sniperRifle"
+
+Info about recoil values: https://hub.sp-tarkov.com/doc/entry/48-recoil-values-and-what-they-do/
+Weapon recoil property names:
+    "CameraRecoil"
+    "CameraSnap"
+    "RecoilForceUp"
+    "RecoilForceBack"
+    "Convergence"
+    "RecolDispersion"   <- make sure to preserve the typo, because this is the actual property name in the database
+
+
+
+"_parent" values to find:
+    "5485a8684bdc2da71d8b4567" - Ammo(including GL rounds)
+    "543be6564bdc2df4348b4568" - Hand Grenades
