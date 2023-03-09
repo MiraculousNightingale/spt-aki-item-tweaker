@@ -29,33 +29,31 @@
             "CameraRecoil": 0.75
         }
     },
-    "decrease_food_animations_tenfold":{
+    "all_helmets_dont_block_earpiece":{
         "filterProperty": "_parent",
         "filterValues": [
-            "5448e8d04bdc2ddf718b4569"
+            "5a341c4086f77401f2541505"
         ],
-        "multiply":{
-            "foodUseTime": 0.01
+        "set": {
+            "BlocksEarpiece": false
         }
     },
-    "increase_water_animations_fifteenfold":{
+    "faceshields_dont_block_nvg":{
         "filterProperty": "_parent",
         "filterValues": [
-            "5448e8d64bdc2dce718b4568"
+            "57bef4c42459772e8d35a53b"
         ],
-        "multiply":{
-            "foodUseTime": 15
+        "set": {
+            "ConflictingItems": []
         }
     },
-    "speedup_med_anims":{
+    "faceshields_medUseTime_test":{
         "filterProperty": "_parent",
         "filterValues": [
-            "5448f3ac4bdc2dce718b4569",
-            "5448f39d4bdc2d0a728b4568",
-            "5448f3a14bdc2d27728b4569"
+            "57bef4c42459772e8d35a53b"
         ],
-        "multiply": {
-            "medUseTime": 0.1
+        "set": {
+            "medUseTime": "cock"
         }
     }
 }

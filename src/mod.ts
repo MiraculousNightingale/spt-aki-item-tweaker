@@ -1,6 +1,5 @@
 import { DatabaseServer } from "@spt-aki/servers/DatabaseServer";
 import { IDatabaseTables } from "@spt-aki/models/spt/server/IDatabaseTables";
-import { Aiming } from "@spt-aki/models/eft/common/IGlobals";
 import { IPostDBLoadMod } from "@spt-aki/models/external/IPostDBLoadMod";
 import { DependencyContainer } from "tsyringe";
 
@@ -8,7 +7,7 @@ import dynamicSelectors from "../config/dynamic_selectors.json";
 import manualOverwrite from "../config/manual_overwrite.json";
 
 import { VerboseLogger } from "./verbose_logger";
-import { Applicator } from "./applicator";
+import { Applicator, ApplicatorLogFormat } from "./applicator";
 import { LogTextColor } from "@spt-aki/models/spt/logging/LogTextColor";
 import { LogBackgroundColor } from "@spt-aki/models/spt/logging/LogBackgroundColor";
 
@@ -53,6 +52,9 @@ class ItemTweaker implements IPostDBLoadMod
             // Make sure that user's selector has a proper JSON structure
             if (filterProperty != null && filterValues != null)
             {
+                // Collecting matching IDs by simply applying the selector filter is not very precise.
+                // Right now some IDs count as a match even if no properties are changed in them.
+                // TODO: Collect matching IDs by trying to apply PROPERTIES, is applicable - count them as a match.
                 const matchingItemIds = Object.keys(dbItems).filter(key => 
                 {
                     const filterByPrivateProp: boolean = this.isPrivateProperty(filterProperty);
@@ -94,12 +96,13 @@ class ItemTweaker implements IPostDBLoadMod
             }
             else 
             {
-                this.logger.explicitWarning(`[WARNING] ${itemName} couldn't be found in the database. Check if the name is correct, remember to refer to "_name", not "Name".`);
+                this.logger.explicitWarning(`[WARNING] "${itemName}" couldn't be found in the database. Check if the name is correct, remember to refer to "_name", not "Name".`);
             }
         }
 
         // Check if selectors modify the same properties for the same items
         // and inform the user of potentially unexpected changes.
+        // TODO: Maybe implement Record<string(itemId), string[](affectedProperties)> utility type to check each item individually, though it's not that necessary
         const checkedSelectors = [];
         for (const selectorKey in selectorMetaData)
         {
@@ -152,25 +155,29 @@ class ItemTweaker implements IPostDBLoadMod
                 const filterValues = selector.filterValues;
 
                 let changeCount = 0;
-                const changedItemCount = selectorMetaData[selectorKey].matchingIds.length;
+                let multipliedItemIds: string[] = [];
+                let setItemIds: string[] = [];
 
                 const ignoreOvewriteIds = Object.keys(overwriteMetaData);
                 if (selector.multiply != null)
                 {
-                    this.logger.log(`Applying selector "${selectorKey}" multipliers`, LogTextColor.BLACK, LogBackgroundColor.CYAN);
-                    const multiplierApplicator = this.applicator.tryToApplyAllItemMultipliers.bind(this.applicator);
+                    this.logger.log(`Applying "${selectorKey}" multipliers`, LogTextColor.BLUE, LogBackgroundColor.BLACK);
+                    const multiplierApplicator = this.applicator.tryToApplyAllMultipliers.bind(this.applicator);
                     const tweakResult = this.applyItemChanges(dbItems, selector.multiply, filterProperty, filterValues, multiplierApplicator, ignoreOvewriteIds);
-                    changeCount += tweakResult[0];
+                    changeCount += tweakResult.changeCount;
+                    multipliedItemIds = tweakResult.changedItemIds;
                 }
                 if (selector.set != null)
                 {
-                    this.logger.log(`Applying selector "${selectorKey}" set values`, LogTextColor.BLACK, LogBackgroundColor.CYAN);
-                    const valueApplicator = this.applicator.tryToApplyAllItemValues.bind(this.applicator);
+                    this.logger.log(`Applying "${selectorKey}" set values`, LogTextColor.BLUE, LogBackgroundColor.BLACK);
+                    const valueApplicator = this.applicator.tryToApplyAllValues.bind(this.applicator);
                     const tweakResult = this.applyItemChanges(dbItems, selector.set, filterProperty, filterValues, valueApplicator, ignoreOvewriteIds);
-                    changeCount += tweakResult[0];
+                    changeCount += tweakResult.changeCount;
+                    setItemIds = tweakResult.changedItemIds;
                 }
-                if (changeCount > 0 && changedItemCount > 0)
-                    this.logger.explicitInfo(`Selector "${selectorKey}" made ${changeCount} changes to ${changedItemCount} items`);
+
+                const changedItemCount = new Set<string>(multipliedItemIds.concat(setItemIds)).size;
+                this.logger.explicitInfo(`"${selectorKey}" made ${changeCount} changes to ${changedItemCount} items`);
             }
         }
         
@@ -189,14 +196,14 @@ class ItemTweaker implements IPostDBLoadMod
                 let changeCount = 0;
                 if (overwrite.multiply != null)
                 {
-                    this.logger.log(`Applying "${itemName}" overwrite multipliers`, LogTextColor.BLACK, LogBackgroundColor.CYAN);
-                    const multiplierApplicator = this.applicator.tryToApplyAllItemMultipliers.bind(this.applicator);
+                    this.logger.log(`Applying "${itemName}" overwrite multipliers`, LogTextColor.BLUE, LogBackgroundColor.BLACK);
+                    const multiplierApplicator = this.applicator.tryToApplyAllMultipliers.bind(this.applicator);
                     changeCount += this.applyItemChanges(dbItems, overwrite.multiply, "_id", [itemId], multiplierApplicator)[0];
                 }
                 if (overwrite.set != null)
                 {
-                    this.logger.log(`Applying "${itemName}" overwrite set values`, LogTextColor.BLACK, LogBackgroundColor.CYAN);
-                    const valueApplicator = this.applicator.tryToApplyAllItemValues.bind(this.applicator);
+                    this.logger.log(`Applying "${itemName}" overwrite set values`, LogTextColor.BLUE, LogBackgroundColor.BLACK);
+                    const valueApplicator = this.applicator.tryToApplyAllValues.bind(this.applicator);
                     changeCount += this.applyItemChanges(dbItems, overwrite.set, "_id", [itemId], valueApplicator)[0];
                 }
                 if (changeCount > 0)
@@ -210,16 +217,18 @@ class ItemTweaker implements IPostDBLoadMod
     /**
      * @param dbItems Database tables of the server which contain items.
      * @param sourceObj JSON source from which multipliers are taken.
-     * @param filterProperty 'item' or 'item._props' property name by which you filter the items in database. The underscore determines whether to search inside _props or outside.
-     * @param applicatorFunc Applicator function which will apply all changes. There are two types of these - value and multiplier functions. (Not singular functions e.g.: tryToApplyValue or tryToApplyMultiplier).
+     * @param filterProperty Property name in 'item' or 'item._props' by which you filter the items in database. The underscore determines whether to search inside "_props" or outside. Check aki database files or "https://db.sp-tarkov.com/" for reference.
+     * @param applicatorFunc Requires an applicator function which will apply ALL changes from one object to another (Not singular functions like: tryToApplyValue or tryToApplyMultiplier). There are two types of these - value and multiplier functions.
      * @param ignoreIds Array of item IDs to ignore. Initially designed to preserve "manual_overwrite.JSON" priority and resolve conflicts if there are any.
      * @param validatorFunc Optional, if the default 'isValidItem' validator is not enough.
-     * @returns Array with two counters, first - total change counter, second - how many items were changed.
+     * @returns An object with the operation result: change count, changed item count, array of changed item IDs
      */
-    private applyItemChanges(dbItems: IDatabaseTables, sourceObj: any, filterProperty: string, filterValues: any[], applicatorFunc: (targetObj: any, sourceObj:any) => number, ignoreIds: string[] = [], validatorFunc: (item: any) => boolean = this.isValidItem): [number, number]
+    // In applicatorFunc specification leave logFormat as required parameter to incentivize the use of ApplicatorLogFormat.LIST_ENTRY.
+    private applyItemChanges(dbItems: IDatabaseTables, sourceObj: any, filterProperty: string, filterValues: any[], applicatorFunc: (targetObj: object, sourceObj: object, logFormat: ApplicatorLogFormat) => number, ignoreIds: string[] = [], validatorFunc: (item: any) => boolean = this.isValidItem): {changeCount: number, changedItemCount: number, changedItemIds: string[]}
     {
         let changeCounter = 0;
         let changedItemCounter = 0;
+        const changedItemIds: string[] = [];
 
         for (const key in dbItems) 
         {
@@ -243,19 +252,20 @@ class ItemTweaker implements IPostDBLoadMod
                 // Check if item is present in source object(config)
                     if (filterValue != null && filterValues.includes(filterValue)) 
                     {
-                        this.logger.log(`Item: ${name}${filterValueHeader} - id: ${id}`, "cyan");
-                        const result = applicatorFunc(properties, sourceObj);
+                        this.logger.log(`Item: ${name}${filterValueHeader} - id: ${id}`, LogTextColor.CYAN);
+                        const result = applicatorFunc(properties, sourceObj, ApplicatorLogFormat.LIST_ENTRY);
                         if (result > 0)
                         {
                             changeCounter+= result;
                             ++changedItemCounter;
+                            changedItemIds.push(id);
                         }                    
                     }
                 }
             }
         }
 
-        return [changeCounter, changedItemCounter];
+        return {changeCount: changeCounter, changedItemCount: changedItemCounter, changedItemIds: changedItemIds};
     }
 
     // Item validation functions

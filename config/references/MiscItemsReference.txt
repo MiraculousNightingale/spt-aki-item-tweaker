@@ -1,11 +1,15 @@
 Note that by "_parent" you can usually determine the general category of an item, e.g. headwear, headphones, rigs, drinks, food, etc.
 Filter by these "_parent" values to get:
-      "5a341c4086f77401f2541505" - Headwear (doesn't include faceshield)
-      "5a341c4686f77469e155819e" - Masks
-      "5448e5284bdc2dcb718b4567" - Rigs (including armored)
-      "5448e54d4bdc2dcc718b4568" - Armors
-      "5448e53e4bdc2d60728b4567" - Backpacks
-
+        "5a341c4086f77401f2541505" - Headwear (doesn't include faceshield)
+        "5a341c4686f77469e155819e" - Masks
+        "5448e5284bdc2dcb718b4567" - Rigs (including armored)
+        "5448e54d4bdc2dcc718b4568" - Armors
+        "5448e53e4bdc2d60728b4567" - Backpacks
+        "5448f3ac4bdc2dce718b4569" - Medical (Surv12 Kit, CMS, etc.)
+        "5448f39d4bdc2d0a728b4568" - Medkits
+        "5448f3a14bdc2d27728b4569" - Drugs
+        "5448e8d04bdc2ddf718b4569" - Food
+        "5448e8d64bdc2dce718b4568" - Drinks
 
 Common properties for items:
     "Weight"

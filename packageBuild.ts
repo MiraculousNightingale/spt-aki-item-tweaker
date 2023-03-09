@@ -46,7 +46,8 @@ const ignoreList = [
     "mod.code-workspace",
     "package-lock.json",
     "tsconfig.json",
-    "README.md"
+    "README.md",
+    "Readme.docx"
 ];
 const exclude = glob.sync(`{${ignoreList.join(",")}}`, { realpath: true, dot: true });
 
