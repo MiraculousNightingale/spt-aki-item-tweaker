@@ -13,7 +13,7 @@ import modConfig from "../config/config.json";
  *      } 
  * }
  * 
- * Version 230228
+ * Version 230309
  */
 class VerboseLogger 
 {
@@ -61,14 +61,6 @@ class VerboseLogger
         }
     }
 
-    public explicitLog(args: string | any[], color: string, backgroundColor?: string): void 
-    {
-        if (Array.isArray(args))
-            this.logger.log(this.format(...args), color, backgroundColor);
-        else
-            this.logger.log(args, color, backgroundColor);
-    }
-
     public info(...args: any[]): void 
     {
         if (this.verbose) 
@@ -101,6 +93,14 @@ class VerboseLogger
         }
     }
 
+    public explicitLog(args: string | any[], color: string, backgroundColor?: string): void 
+    {
+        if (Array.isArray(args))
+            this.logger.log(this.format(...args), color, backgroundColor);
+        else
+            this.logger.log(args, color, backgroundColor);
+    }
+
     public explicitInfo(...args: any[]): void 
     {
         this.logger.info(this.format(...args));
@@ -108,10 +108,7 @@ class VerboseLogger
 
     public explicitWarning(...args: any[]): void 
     {
-        if (this.verbose) 
-        {
-            this.logger.warning(this.format(...args));
-        }
+        this.logger.warning(this.format(...args));
     }
 
     public explicitError(...args: any[]): void 

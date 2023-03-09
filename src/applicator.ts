@@ -9,6 +9,15 @@ enum ApplicatorLogFormat
     DEFAULT
 }
 
+/**
+ * Defines what applicator has to do with property values.
+ */
+enum ApplicatorChangeType
+    {
+    MULTIPLY,
+    SET_VALUE
+}
+
 
 /**
  * Utility class which applies values and multipliers to target objects from source objects with different options.
@@ -28,6 +37,100 @@ class Applicator
     }
 
     /**
+     * Checks if a value can be applied to the target object (without actually applying it).
+     * @param targetObj Target object to apply the value to.
+     * @param sourceObj Source object to get the value from.
+     * @param parameter Property name.
+     * @param showLogMessages Whether to show the warning/error messages during the checking process.
+     * @returns Boolean check result.
+     */
+    public canApplyValue(targetObj: object, sourceObj: object, parameter: string, showLogMessages = false): boolean
+    {
+        // Nothing is written into target object so assign it's property a simpler variable name.
+        const oldValue = targetObj[parameter];
+        const newValue = sourceObj[parameter];
+        if (oldValue !== undefined) 
+        {
+            if (typeof oldValue !== typeof newValue)
+            {
+                if (showLogMessages)
+                    this.logger.error(`[ERROR] "${parameter}": new value type "${typeof newValue}" doesn't match old value type "${typeof oldValue}"!`);
+                return false;
+            }
+        }
+        else 
+        {
+            if (showLogMessages)
+                this.logger.warning(`[WARNING] "${parameter}" property is undefined in the target object.`);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Checks if a multiplier can be applied to the target object (without actually applying it).
+     * @param targetObj Target object to apply the value to.
+     * @param sourceObj Source object to get the value from.
+     * @param parameter Property name.
+     * @param showLogMessages Whether to show the warning/error messages during the checking process.
+     * @returns Boolean check result.
+     */
+    public canApplyMultiplier(targetObj: object, sourceObj: object, parameter: string, showLogMessages = false): boolean 
+    {
+        // Nothing is written into target object so assign it's property a simpler variable name.
+        const oldValue = targetObj[parameter];
+        const multiplier = sourceObj[parameter];
+        if (typeof multiplier !== "number" || Number.isNaN(multiplier))
+        {
+            if (showLogMessages)
+                this.logger.error(`[ERROR] "${parameter}" property multiplier has to be a number!`);
+            return false;
+        }
+        if (oldValue !== undefined) 
+        {
+            if (typeof oldValue !== "number" || Number.isNaN(oldValue))
+            {
+                if (showLogMessages)
+                    this.logger.error(`[ERROR] Type of property "${parameter}" is ${typeof oldValue} and can't be multiplied!`);
+                return false;
+            }
+        }
+        else 
+        {
+            if (showLogMessages)
+                this.logger.warning(`[WARNING] "${parameter}" property is undefined in the target object.`);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Checks if atleast one change can be applied to the target object.
+     * @param targetObj Target object to apply the value to.
+     * @param sourceObj Source object to get the value from.
+     * @param changeType Change type enum.
+     * @param showLogMessages Whether to show the warning/error messages during the checking process.
+     * @returns Boolean check result.
+     */
+    public canApplyAnyChanges(targetObj: object, sourceObj: object, changeType: ApplicatorChangeType, showLogMessages = false): boolean
+    {
+        switch (changeType)
+        {
+            case ApplicatorChangeType.MULTIPLY:
+                for (const parameter in sourceObj)
+                    if (this.canApplyMultiplier(targetObj, sourceObj, parameter, showLogMessages)) return true;
+                break;
+            case ApplicatorChangeType.SET_VALUE:
+                for (const parameter in sourceObj) 
+                    if (this.canApplyValue(targetObj, sourceObj, parameter, showLogMessages)) return true;
+                break;
+            default:
+                throw ("Undefined ApplicatorChangeType used.");
+        }
+        return false;
+    }
+
+    /**
      * A singular applicator function. Tries to apply a value from one object to another if possible. If successfull - will output an optional success message, if not - warning/error messages.
      * @param targetObj Target object to apply the value to.
      * @param sourceObj Source object to get the value from.
@@ -37,9 +140,9 @@ class Applicator
      */
     public tryToApplyValue(targetObj: object, sourceObj: object, parameter: string, logFormat: ApplicatorLogFormat = ApplicatorLogFormat.DEFAULT): number 
     {
-        const newValue = sourceObj[parameter];
-        if (targetObj[parameter] !== undefined) 
+        if (this.canApplyValue(targetObj, sourceObj, parameter, true))
         {
+            const newValue = sourceObj[parameter];
             const oldValue = targetObj[parameter];
             if (targetObj[parameter] !== newValue)
             {
@@ -68,15 +171,11 @@ class Applicator
                 }
             }
         }
-        else 
-        {
-            this.logger.explicitWarning(`[WARNING] "${parameter}" property is not found(or not set) in the target object.`);
-        }
         return 0;
     }
 
     /**
-     * Tries to apply all values from source object to the target object if possible. May output success, warning and error messages.
+     * @deprecated Legacy function. Tries to apply all values from source object to the target object if possible. May output success, warning and error messages.
      * @param targetObj Target object to apply the value to.
      * @param sourceObj Source object to get the value from.
      * @param logFormat A format in which to output the application log.
@@ -102,21 +201,9 @@ class Applicator
      */
     public tryToApplyMultiplier(targetObj: object, sourceObj: object, parameter: string, logFormat: ApplicatorLogFormat = ApplicatorLogFormat.DEFAULT): number 
     {
-        const multiplier = sourceObj[parameter];
-        if (typeof multiplier !== "number" || Number.isNaN(multiplier))
+        if (this.canApplyMultiplier(targetObj, sourceObj, parameter, true))
         {
-            this.logger.explicitError(`[ERROR] "${parameter}" property multiplier has to be a number!`);
-            return 0;
-        }
-
-        if (targetObj[parameter] !== undefined) 
-        {
-            if (typeof targetObj[parameter] !== "number" || Number.isNaN(targetObj[parameter]))
-            {
-                this.logger.explicitError(`[ERROR] Type of property "${parameter}" is ${typeof targetObj[parameter]} and can't be multiplied!`);
-                return 0;
-            }
-
+            const multiplier = sourceObj[parameter];
             const oldValue = targetObj[parameter];
             targetObj[parameter] *= multiplier;
             if (oldValue !== targetObj[parameter]) 
@@ -124,8 +211,8 @@ class Applicator
                 switch (logFormat)
                 {
                     case ApplicatorLogFormat.LIST_ENTRY:
-                        // Format string seems not that useful here at all, keep for reference or remove later.
-                        // this.logger.success("├ %0s: Successfully multiplied by %0s (Before: %0s | After: %0s)", parameter, multiplier, oldValue, targetObj[parameter]);
+                    // Format string seems not that useful here at all, keep for reference or remove later.
+                    // this.logger.success("├ %0s: Successfully multiplied by %0s (Before: %0s | After: %0s)", parameter, multiplier, oldValue, targetObj[parameter]);
                         this.logger.success(`├ ${parameter}: Successfully multiplied by ${multiplier} (Before: ${oldValue} | After: ${targetObj[parameter]})`);
                         break;
                     default:
@@ -147,15 +234,11 @@ class Applicator
                 }
             }
         }
-        else 
-        {
-            this.logger.explicitWarning(`[WARNING] "${parameter}" property is undefined in the target object.`);
-        }
         return 0;
     }
 
     /**
-     * Tries to apply all multipliers from source object to the the properties of a target object if possible. May output success, warning and error messages.
+     * @deprecated Legacy function. Tries to apply all multipliers from source object to the the properties of a target object if possible. May output success, warning and error messages.
      * @param targetObj Target object to apply the multiplier to.
      * @param sourceObj Source object to get the multiplier from.
      * @param logFormat A format in which to output the application log.
@@ -172,7 +255,34 @@ class Applicator
     }
 
     /**
-     * Legacy function. Contains duplicate code. Remove.
+     * Tries to apply all changes from source object to the the properties of a target object if possible. May output success, warning and error messages.
+     * @param targetObj Target object to apply the changes to.
+     * @param sourceObj Source object to get the changes from.
+     * @param changeType Change type enum.
+     * @param logFormat A format in which to output the application log.
+     * @returns Number of changes made.
+     */
+    public tryToApplyAllChanges(targetObj: object, sourceObj: object, changeType: ApplicatorChangeType, logFormat: ApplicatorLogFormat = ApplicatorLogFormat.DEFAULT): number 
+    {
+        let changeCounter = 0;
+        switch (changeType)
+        {
+            case ApplicatorChangeType.MULTIPLY:
+                for (const parameter in sourceObj) 
+                    changeCounter += this.tryToApplyMultiplier(targetObj, sourceObj, parameter, logFormat);
+                break;
+            case ApplicatorChangeType.SET_VALUE:
+                for (const parameter in sourceObj) 
+                    changeCounter += this.tryToApplyValue(targetObj, sourceObj, parameter, logFormat);
+                break;
+            default:
+                throw ("Undefined ApplicatorChangeType used.");
+        }
+        return changeCounter;
+    }
+
+    /**
+     * @deprecated Legacy function. Contains duplicate code. Remove.
      */
     public tryToApplyItemMultiplier(targetObj: object, sourceObj: object, parameter: string): number 
     {
@@ -203,7 +313,7 @@ class Applicator
     }
 
     /**
-     * Legacy function. Contains duplicate code. Remove.
+     * @deprecated Legacy function. Contains duplicate code. Remove.
      */
     public tryToApplyAllItemMultipliers(targetObj: object, sourceObj: object): number 
     {
@@ -216,7 +326,7 @@ class Applicator
     }
 
     /**
-     * Legacy function. Contains duplicate code. Remove.
+     * @deprecated Legacy function. Contains duplicate code. Remove.
      */
     public tryToApplyItemValue(targetObj: object, sourceObj: object, parameter: string): number 
     {
@@ -243,7 +353,7 @@ class Applicator
     }
 
     /**
-     * Legacy function. Contains duplicate code. Remove.
+     * @deprecated Legacy function. Contains duplicate code. Remove.
      */
     public tryToApplyAllItemValues(targetObj: object, sourceObj: object): number 
     {
@@ -254,6 +364,8 @@ class Applicator
         }
         return changeCounter;
     }
+
+    
 }
 
-export { Applicator, ApplicatorLogFormat }
+export { Applicator, ApplicatorLogFormat, ApplicatorChangeType }

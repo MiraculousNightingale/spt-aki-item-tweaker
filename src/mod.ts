@@ -7,7 +7,7 @@ import dynamicSelectors from "../config/dynamic_selectors.json";
 import manualOverwrite from "../config/manual_overwrite.json";
 
 import { VerboseLogger } from "./verbose_logger";
-import { Applicator, ApplicatorLogFormat } from "./applicator";
+import { Applicator, ApplicatorChangeType, ApplicatorLogFormat } from "./applicator";
 import { LogTextColor } from "@spt-aki/models/spt/logging/LogTextColor";
 import { LogBackgroundColor } from "@spt-aki/models/spt/logging/LogBackgroundColor";
 
@@ -16,12 +16,24 @@ type Selector = {
     filterValues: any[];
     multiply?: object;
     set?: object;
-    priority?: number
+    priority?: number;
+}
+
+type SelectorMetaData = {
+    matchingIds: string[];
+    changedProperties: string[];
+    priority?: number;
+    isValid: boolean;
 }
 
 type Overwrite = {
     multiply?: object;
     set?: object;
+}
+
+type OverwriteMetaData = {
+    name: string;
+    changedProperties: string[];
 }
 
 class ItemTweaker implements IPostDBLoadMod 
@@ -36,63 +48,30 @@ class ItemTweaker implements IPostDBLoadMod
 
         this.logger.explicitLog("Item Tweaker: Starting...", LogTextColor.BLACK, LogBackgroundColor.WHITE);
 
-        this.logger.info("Initialization...");
+        this.logger.explicitInfo("Initialization...");
         const databaseServer = container.resolve<DatabaseServer>("DatabaseServer");
         const tables = databaseServer.getTables();
         const dbItems: IDatabaseTables = tables.templates.items;
 
-        // Collect selectors meta to check for intersections
-        const selectorMetaData = {};
+        // Collect selectors meta to check for intersections and validate selectors
+        const selectorsMetaData = new Map<string, SelectorMetaData>();
         for (const selectorKey in dynamicSelectors)
         {
-            const selector: Selector = dynamicSelectors[selectorKey];
-            const filterProperty = selector.filterProperty;
-            const filterValues = selector.filterValues;
-
-            // Make sure that user's selector has a proper JSON structure
-            if (filterProperty != null && filterValues != null)
-            {
-                // Collecting matching IDs by simply applying the selector filter is not very precise.
-                // Right now some IDs count as a match even if no properties are changed in them.
-                // TODO: Collect matching IDs by trying to apply PROPERTIES, is applicable - count them as a match.
-                const matchingItemIds = Object.keys(dbItems).filter(key => 
-                {
-                    const filterByPrivateProp: boolean = this.isPrivateProperty(filterProperty);
-                    const filterValue = filterByPrivateProp ? dbItems[key][filterProperty] : dbItems[key]._props[filterProperty];
-                    return filterValue != null && filterValues.includes(filterValue);
-                });
-            
-                if (matchingItemIds.length > 0) 
-                {
-                    selectorMetaData[selectorKey] = {
-                        matchingIds: matchingItemIds,
-                        changedProperties: Object.keys(selector.multiply ?? {}).concat(Object.keys(selector.set ?? {})),
-                        //Potentially priority number can be used to resolve conflicts
-                        //though I can't see right now how conflicts could prevent you 
-                        //from doing what you want to do in a meaningful way
-                        priority: selector.priority
-                    };
-                }
-                else 
-                    this.logger.explicitWarning(`[WARNING] "${selectorKey}" has no matches. Check if "filterProperty"(${selector.filterProperty}) and "filterValues"(${selector.filterValues.toString().replace(/,/g, ", ")}) are correct.`);
-            }
-            else
-                this.logger.explicitError(`[ERROR] "${selectorKey}" properties "filterProperty"(${filterProperty}) and "filterValues"(${filterValues}) have to be defined!`);
+            selectorsMetaData.set(selectorKey, this.getSelectorMetaData(dbItems, dynamicSelectors[selectorKey], selectorKey));
         }
-
         // Collect overwrite meta
         // And check if the names can be found in database
-        const overwriteMetaData = {};
+        const overwritesMetaData = new Map<string, OverwriteMetaData>();
         for (const itemName in manualOverwrite)
         {
             const overwrite: Overwrite = manualOverwrite[itemName];
             const itemId = Object.keys(dbItems).find(element => dbItems[element]._name === itemName);
             if (itemId != null)
             {
-                overwriteMetaData[itemId] = {
+                overwritesMetaData.set(itemId, {
                     name: itemName,
                     changedProperties: Object.keys(overwrite.multiply ?? {}).concat(Object.keys(overwrite.set ?? {}))
-                };
+                });
             }
             else 
             {
@@ -102,39 +81,40 @@ class ItemTweaker implements IPostDBLoadMod
 
         // Check if selectors modify the same properties for the same items
         // and inform the user of potentially unexpected changes.
-        // TODO: Maybe implement Record<string(itemId), string[](affectedProperties)> utility type to check each item individually, though it's not that necessary
-        const checkedSelectors = [];
-        for (const selectorKey in selectorMetaData)
+        // TODO: Maybe implement Record<string(itemId), string[](affectedProperties)> utility type to check each item individually, though it's not that necessary at all
+        const checkedSelectors: string[] = [];
+        for (const selectorKey of selectorsMetaData.keys())
         {
-            const selectorChanges = selectorMetaData[selectorKey];
-            for (const key in selectorMetaData)
+            const selectorChanges = selectorsMetaData.get(selectorKey);
+            for (const key of selectorsMetaData.keys())
             {
                 if (selectorKey != key && !checkedSelectors.includes(key))
                 {
-                    const idIntersection: string[] = selectorChanges.matchingIds.filter(element => selectorMetaData[key].matchingIds.includes(element));
-                    const propsIntersections: string[] = selectorChanges.changedProperties.filter(element => selectorMetaData[key].changedProperties.includes(element));
+                    const otherSelectorChanges = selectorsMetaData.get(key);
+                    const idIntersection: string[] = selectorChanges.matchingIds.filter(element => otherSelectorChanges.matchingIds.includes(element));
+                    const propsIntersections: string[] = selectorChanges.changedProperties.filter(element => otherSelectorChanges.changedProperties.includes(element));
                     if (idIntersection.length > 0 && propsIntersections.length > 0)
                     {
                         this.logger.explicitLog(`[WARNING] Potentially unexpected changes. Selector "${selectorKey}" intersects with "${key}" in ${idIntersection.length} items.`, LogTextColor.RED, LogBackgroundColor.YELLOW);
                         
-                        for (const itemId in overwriteMetaData)
+                        for (const itemId of overwritesMetaData.keys())
                         {
-                            const overwriteItem = overwriteMetaData[itemId];
+                            const overwriteMeta = overwritesMetaData.get(itemId);
                             // Check if item is resolved
                             if (idIntersection.includes(itemId)) 
                             {
-                                const unresolvedProps = propsIntersections.filter(element => !overwriteItem.changedProperties.includes(element));
+                                const unresolvedProps = propsIntersections.filter(element => !overwriteMeta.changedProperties.includes(element));
                                 if (unresolvedProps.length > 0)
                                 {
-                                    this.logger.explicitLog(`[WARNING] Item ${overwriteItem.name} (${itemId}) is found in manual overwrite, but following property conflicts are not resolved: ${unresolvedProps.toString().replace(/,/g, ", ")}`, LogTextColor.BLACK, LogBackgroundColor.YELLOW);
+                                    this.logger.explicitLog(`[WARNING] Item ${overwriteMeta.name} (${itemId}) is found in manual overwrite, but following property conflicts are not resolved: ${unresolvedProps.toString().replace(/,/g, ", ")}`, LogTextColor.BLACK, LogBackgroundColor.YELLOW);
                                 }
                                 idIntersection.splice(idIntersection.indexOf(itemId), 1);
                             }                            
                         }
 
                         const itemNames = idIntersection.map(element => dbItems[element]._name);
-                        this.logger.explicitLog(`[WARNING] Conflict Items: ${itemNames.toString().replace(/,/g, ", ")}`, LogTextColor.YELLOW, LogBackgroundColor.BLACK);
-                        this.logger.explicitLog(`[WARNING] Conflict Properties: ${propsIntersections.toString().replace(/,/g, ", ")}`, LogTextColor.YELLOW, LogBackgroundColor.BLACK);
+                        this.logger.explicitLog(`[WARNING] Conflict Items: ${itemNames.toString().replace(/,/g, ", ")}`, LogTextColor.YELLOW);
+                        this.logger.explicitLog(`[WARNING] Conflict Properties: ${propsIntersections.toString().replace(/,/g, ", ")}`, LogTextColor.YELLOW);
                     }
                 }
             }
@@ -144,70 +124,45 @@ class ItemTweaker implements IPostDBLoadMod
         // Apply Selector Tweaks
         // Use selectorMetaData to loop through, as it skips invalid selectors (no matches or errors in JSON structure)
         // If there are no valid selectors - do nothing
-        if (Object.keys(selectorMetaData).length > 0)
+        if (selectorsMetaData.size > 0)
         {
-            this.logger.explicitInfo("Applying Selector Tweaks");
+            this.logger.explicitInfo("Applying Selector Tweaks...");
 
-            for (const selectorKey in selectorMetaData)
+            for (const selectorKey of selectorsMetaData.keys())
             {
-                const selector: Selector = dynamicSelectors[selectorKey];
-                const filterProperty = selector.filterProperty;
-                const filterValues = selector.filterValues;
-
-                let changeCount = 0;
-                let multipliedItemIds: string[] = [];
-                let setItemIds: string[] = [];
-
-                const ignoreOvewriteIds = Object.keys(overwriteMetaData);
-                if (selector.multiply != null)
+                const selectorMeta = selectorsMetaData.get(selectorKey);
+                if (selectorMeta.isValid)
                 {
-                    this.logger.log(`Applying "${selectorKey}" multipliers`, LogTextColor.BLUE, LogBackgroundColor.BLACK);
-                    const multiplierApplicator = this.applicator.tryToApplyAllMultipliers.bind(this.applicator);
-                    const tweakResult = this.applyItemChanges(dbItems, selector.multiply, filterProperty, filterValues, multiplierApplicator, ignoreOvewriteIds);
-                    changeCount += tweakResult.changeCount;
-                    multipliedItemIds = tweakResult.changedItemIds;
-                }
-                if (selector.set != null)
-                {
-                    this.logger.log(`Applying "${selectorKey}" set values`, LogTextColor.BLUE, LogBackgroundColor.BLACK);
-                    const valueApplicator = this.applicator.tryToApplyAllValues.bind(this.applicator);
-                    const tweakResult = this.applyItemChanges(dbItems, selector.set, filterProperty, filterValues, valueApplicator, ignoreOvewriteIds);
-                    changeCount += tweakResult.changeCount;
-                    setItemIds = tweakResult.changedItemIds;
-                }
+                    const selector: Selector = dynamicSelectors[selectorKey];
+                    const ignoreOvewriteIds = [...overwritesMetaData.keys()];
 
-                const changedItemCount = new Set<string>(multipliedItemIds.concat(setItemIds)).size;
-                this.logger.explicitInfo(`"${selectorKey}" made ${changeCount} changes to ${changedItemCount} items`);
+                    this.logger.log(`Applying "${selectorKey}"...`, LogTextColor.BLUE);
+                    const tweakResult = this.applySelector(dbItems, selector, selectorMeta.matchingIds, ignoreOvewriteIds);
+
+                    this.logger.explicitInfo(`"${selectorKey}" made ${tweakResult.changeCount} changes to ${tweakResult.changedItemCount} items`);
+                }
             }
         }
         
         // Apply Manual Overwrite Tweaks
         // Use overwriteMetaData to loop through, as it skips items which were not found (potentially due to a wrong name defined in the config)
         // If there are no valid overwrite items - do nothing
-        if (Object.keys(overwriteMetaData).length > 0)
+        if (overwritesMetaData.size > 0)
         {
-            this.logger.explicitInfo("Applying Manual Overwrite Tweaks");
+            this.logger.explicitInfo("Applying Manual Overwrite Tweaks...");
 
-            for (const itemId in overwriteMetaData)
+            for (const itemId of overwritesMetaData.keys())
             {
-                const itemName = overwriteMetaData[itemId].name;
-                const overwrite = manualOverwrite[itemName];
-
-                let changeCount = 0;
-                if (overwrite.multiply != null)
-                {
-                    this.logger.log(`Applying "${itemName}" overwrite multipliers`, LogTextColor.BLUE, LogBackgroundColor.BLACK);
-                    const multiplierApplicator = this.applicator.tryToApplyAllMultipliers.bind(this.applicator);
-                    changeCount += this.applyItemChanges(dbItems, overwrite.multiply, "_id", [itemId], multiplierApplicator)[0];
+                const itemName = overwritesMetaData.get(itemId).name;
+                const overwriteSelector: Selector = {
+                    filterProperty: "_id",
+                    filterValues: [itemId],
+                    multiply: manualOverwrite[itemName],
+                    set: manualOverwrite[itemName]
                 }
-                if (overwrite.set != null)
-                {
-                    this.logger.log(`Applying "${itemName}" overwrite set values`, LogTextColor.BLUE, LogBackgroundColor.BLACK);
-                    const valueApplicator = this.applicator.tryToApplyAllValues.bind(this.applicator);
-                    changeCount += this.applyItemChanges(dbItems, overwrite.set, "_id", [itemId], valueApplicator)[0];
-                }
-                if (changeCount > 0)
-                    this.logger.explicitInfo(`Manual Overwrite made ${changeCount} changes to "${itemName}"`);
+                this.logger.log(`Applying "${itemName}" overwrite...`, LogTextColor.BLUE);
+                const overwriteResult = this.applySelector(dbItems, overwriteSelector, [itemId]);
+                this.logger.explicitInfo(`Manual Overwrite made ${overwriteResult.changeCount} changes to "${itemName}"`);
             }
         }
 
@@ -215,32 +170,36 @@ class ItemTweaker implements IPostDBLoadMod
     }
 
     /**
+     * Applies a selector to database items.
      * @param dbItems Database tables of the server which contain items.
-     * @param sourceObj JSON source from which multipliers are taken.
-     * @param filterProperty Property name in 'item' or 'item._props' by which you filter the items in database. The underscore determines whether to search inside "_props" or outside. Check aki database files or "https://db.sp-tarkov.com/" for reference.
-     * @param applicatorFunc Requires an applicator function which will apply ALL changes from one object to another (Not singular functions like: tryToApplyValue or tryToApplyMultiplier). There are two types of these - value and multiplier functions.
-     * @param ignoreIds Array of item IDs to ignore. Initially designed to preserve "manual_overwrite.JSON" priority and resolve conflicts if there are any.
+     * @param selector A selector that will be applied.
+     * @param affectedItemIds An optional array of item IDs which should be affected by this selector. Intended as optimization to use with SelectorMetaData.matchingIds or when changing one item only.
+     * @param ignoreIds An optional array of item IDs to ignore. Initially designed to preserve "manual_overwrite.JSON" priority and resolve conflicts if there are any.
      * @param validatorFunc Optional, if the default 'isValidItem' validator is not enough.
      * @returns An object with the operation result: change count, changed item count, array of changed item IDs
      */
     // In applicatorFunc specification leave logFormat as required parameter to incentivize the use of ApplicatorLogFormat.LIST_ENTRY.
-    private applyItemChanges(dbItems: IDatabaseTables, sourceObj: any, filterProperty: string, filterValues: any[], applicatorFunc: (targetObj: object, sourceObj: object, logFormat: ApplicatorLogFormat) => number, ignoreIds: string[] = [], validatorFunc: (item: any) => boolean = this.isValidItem): {changeCount: number, changedItemCount: number, changedItemIds: string[]}
+    private applySelector(dbItems: IDatabaseTables, selector: Selector, affectedItemIds: string[] = [], ignoreIds: string[] = [], validatorFunc: (item: any) => boolean = this.isValidItem): {changeCount: number, changedItemCount: number, changedItemIds: string[]}
     {
-        let changeCounter = 0;
-        let changedItemCounter = 0;
+        let changeCount = 0;
+        let changedItemCount = 0;
         const changedItemIds: string[] = [];
 
-        for (const key in dbItems) 
+        const filterProperty = selector.filterProperty;
+        const filterValues = selector.filterValues;
+        const filterByPrivateProp: boolean = this.isPrivateProperty(filterProperty);
+
+        // Not really needed but can help avoid needless iterations over the database
+        const itemIdSource = affectedItemIds.length > 0 ? affectedItemIds : Object.keys(dbItems);
+        for (const id of itemIdSource) 
         {
-            const id = key;
             // ignoreIds is used to ignore items which are present in "manual_overwrite.JSON" to preserve their priority
             if (!ignoreIds.includes(id))
             {
-                const item = dbItems[key];
+                const item = dbItems[id];
                 const properties = item._props;
                 const name = item._name;
             
-                const filterByPrivateProp: boolean = this.isPrivateProperty(filterProperty);
                 const filterValue = filterByPrivateProp ? item[filterProperty] : properties[filterProperty];
                 // If we filter not by name then show the filter value in the header along with the name and id
                 // There are several names in the item object, check for both '_name' and 'Name'
@@ -249,23 +208,133 @@ class ItemTweaker implements IPostDBLoadMod
 
                 if (validatorFunc(item))
                 {
-                // Check if item is present in source object(config)
+                    // Check if item matches the selector
                     if (filterValue != null && filterValues.includes(filterValue)) 
                     {
-                        this.logger.log(`Item: ${name}${filterValueHeader} - id: ${id}`, LogTextColor.CYAN);
-                        const result = applicatorFunc(properties, sourceObj, ApplicatorLogFormat.LIST_ENTRY);
-                        if (result > 0)
+                        if (selector.multiply != null || selector.set != null)
                         {
-                            changeCounter+= result;
-                            ++changedItemCounter;
-                            changedItemIds.push(id);
-                        }                    
+                            this.logger.log(`Item: ${name}${filterValueHeader} - id: ${id}`, LogTextColor.CYAN);
+                            let multiplyResult = 0;
+                            let setValueResult = 0;
+
+                            if (selector.multiply != null)
+                                multiplyResult += this.applicator.tryToApplyAllChanges(properties, selector.multiply, ApplicatorChangeType.MULTIPLY, ApplicatorLogFormat.LIST_ENTRY);
+                            if (selector.set != null)
+                                setValueResult += this.applicator.tryToApplyAllChanges(properties, selector.set, ApplicatorChangeType.SET_VALUE, ApplicatorLogFormat.LIST_ENTRY);
+
+                            const totalResult = multiplyResult+setValueResult;
+                            if (totalResult > 0)
+                            {
+                                changeCount+= totalResult;
+                                ++changedItemCount;
+                                changedItemIds.push(id);
+                            }
+                        }
                     }
                 }
             }
         }
+        return {changeCount: changeCount, changedItemCount: changedItemCount, changedItemIds: changedItemIds};
+    }
 
-        return {changeCount: changeCounter, changedItemCount: changedItemCounter, changedItemIds: changedItemIds};
+    /**
+     * Get an array of items which the selector affects. That means items which match filter properties and contain a valid property that can be changed by the selector.
+     * @param dbItems Database tables of the server which contain items.
+     * @param selector A selector that will be applied.
+     * @param validatorFunc Optional, if the default 'isValidItem' validator is not enough.
+     * @returns An object with the operation result: change count, changed item count, array of changed item IDs
+     */
+    private getAffectedItemIds(dbItems: IDatabaseTables, selector: Selector, validatorFunc: (item: any) => boolean = this.isValidItem): string[]
+    {
+        const affectedItemIds: string[] = [];
+        const filterProperty = selector.filterProperty;
+        const filterValues = selector.filterValues;
+        for (const id in dbItems) 
+        {
+            const item = dbItems[id];
+            const properties = item._props;           
+            const filterByPrivateProp: boolean = this.isPrivateProperty(filterProperty);
+            const filterValue = filterByPrivateProp ? item[filterProperty] : properties[filterProperty];
+            // There are several names in the item object, check for both '_name' and 'Name'
+            // The '_name' private property is more accurate as there are incorrect names or dublicates set to '_props.Name'
+            if (validatorFunc(item))
+            {
+                // Check if item matches the selector
+                if (filterValue != null && filterValues.includes(filterValue)) 
+                {
+                    if (selector.multiply != null || selector.set != null)
+                    {
+                        let isAffectedItem = false;
+                        if (selector.multiply != null)
+                            if (this.applicator.canApplyAnyChanges(properties, selector.multiply, ApplicatorChangeType.MULTIPLY)) isAffectedItem = true;
+                        if (selector.set != null)
+                            if (this.applicator.canApplyAnyChanges(properties, selector.set, ApplicatorChangeType.SET_VALUE)) isAffectedItem = true;
+                        if (isAffectedItem)
+                            affectedItemIds.push(id);
+                    }
+                }
+            }
+        }
+        return affectedItemIds;
+    }
+
+    /**
+     * Validates a selector and collects meta data for it.
+     * @param dbItems Database tables of the server which contain items.
+     * @param selector A selector to validate and collect meta data for.
+     * @param validatorFunc Optional, if the default 'isValidItem' validator is not enough.
+     * @returns A meta data object.
+     */
+    private getSelectorMetaData(dbItems: IDatabaseTables, selector: Selector, logName?: string): SelectorMetaData
+    {
+        const filterProperty = selector.filterProperty;
+        const filterValues = selector.filterValues;
+        const multiply = selector.multiply;
+        const set = selector.set;
+
+        // Make sure that user's selector has a proper JSON structure and types
+        if (filterProperty != null && filterValues != null && typeof filterProperty === "string" && Array.isArray(filterValues))
+        {
+            // Selector having no changes is not critical
+            if (multiply === undefined && set === undefined)
+            {
+                if (logName !== undefined)
+                    this.logger.explicitWarning(`[WARNING] "${logName}" does nothing. Both it's "multiply" and "set" properties are undefined.`);
+            }
+            // Make sure "multiply" and "set" properties are objects
+            if (multiply === null || multiply != null && multiply.constructor.name !== "Object" || set === null || set != null && set.constructor.name !== "Object")
+            {
+                if (logName !== undefined)
+                    this.logger.explicitError(`[ERROR] "${logName}" properties "multiply"(${JSON.stringify(multiply)}) and "set"(${JSON.stringify(set)}) must be objects!`);
+            }
+            else 
+            {
+                const matchingItemIds = this.getAffectedItemIds(dbItems, selector);
+                if (matchingItemIds.length < 1) 
+                    if (logName !== undefined)
+                        this.logger.explicitWarning(`[WARNING] "${logName}" has no matches. Check if "filterProperty"(${selector.filterProperty}) and "filterValues"(${selector.filterValues.toString().replace(/,/g, ", ")}), or multiplied/set property names are correct. For more info enable "verbose" in config.`);
+
+                return {
+                    matchingIds: matchingItemIds,
+                    changedProperties: [...new Set(Object.keys(selector.multiply ?? {}).concat(Object.keys(selector.set ?? {})))],
+                    //Potentially priority number can be used to resolve conflicts
+                    //though I can't see right now how conflicts could prevent you 
+                    //from doing what you want to do in a meaningful way
+                    priority: selector.priority,
+                    isValid: true
+                };
+            }
+        }
+        else
+        {
+            if (logName !== undefined)
+                this.logger.explicitError(`[ERROR] "${logName}" properties "filterProperty"(${JSON.stringify(filterProperty)}) and "filterValues"(${JSON.stringify(filterValues)}) have to be defined and must have a type "string" and "Array" accordingly!`);
+        }
+        return {
+            matchingIds: [],
+            changedProperties: [],
+            isValid: false
+        }
     }
 
     // Item validation functions
@@ -275,7 +344,7 @@ class ItemTweaker implements IPostDBLoadMod
      * @param item Item to validate.
      * @returns Validation result (true|false).
      */
-    private isValidWeaponItem(item: any): boolean
+    public isValidWeaponItem(item: any): boolean
     {
         return item != null && item._type === "Item" && item._props != null && item._props.weapClass != null && item._name != null;
     }
@@ -285,7 +354,7 @@ class ItemTweaker implements IPostDBLoadMod
      * @param item Item to validate.
      * @returns Validation result. (true|false)
      */
-    private isValidArmorItem(item: any): boolean
+    public isValidArmorItem(item: any): boolean
     {
         return item != null && item._type === "Item" && item._props != null && item._props.ArmorType != null && item._name != null;
     }
@@ -295,7 +364,7 @@ class ItemTweaker implements IPostDBLoadMod
      * @param item Item to validate
      * @returns Validation result. (true|false)
      */
-    private isValidItem(item: any): boolean
+    public isValidItem(item: any): boolean
     {
         return item != null && item._type === "Item" && item._props != null && item._name != null;
     }
@@ -305,7 +374,7 @@ class ItemTweaker implements IPostDBLoadMod
      * @param propertyName String of a property name to be checked.
      * @returns Check result.
      */
-    private isPrivateProperty(propertyName: string)
+    public isPrivateProperty(propertyName: string)
     {
         return propertyName.charAt(0) === "_";
     }
