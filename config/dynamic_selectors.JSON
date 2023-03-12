@@ -1,59 +1,132 @@
 {
     "armors_mousePenalty_to_zero": {
-        "filterProperty": "ArmorType",
-        "filterValues": [
-            "Light",
-            "Heavy",
-            "None"
-        ],
+        "query": {
+            "key": "ArmorType",
+            "values": [
+                "Light",
+                "Heavy",
+                "None"
+            ]
+        },
         "set": {
             "mousePenalty": 0
         }
     },
+    "armors_weight_half": {
+        "query": {
+            "key": "ArmorType",
+            "values": [
+                "Light",
+                "Heavy"
+            ]
+        },
+        "multiply": {
+            "Weight": 0.5
+        }
+    },
     "dmrs_recoil_tweaks": {
-        "filterProperty": "weapClass",
-        "filterValues": [
-            "marksmanRifle"
-        ],
+        "query": {
+            "key": "weapClass",
+            "values": [
+                "marksmanRifle"
+            ]
+        },
         "multiply": {
             "RecolDispersion": 0.68
         }
     },
     "reduce_all_weapons_camera_recoil": {
-        "filterProperty": "weapUseType",
-        "filterValues": [
-            "primary",
-            "secondary"
-        ],
+        "query": {
+            "key": "weapUseType",
+            "values": [
+                "primary",
+                "secondary"
+            ]
+        },
         "multiply": {
             "CameraRecoil": 0.75
         }
     },
-    "all_helmets_dont_block_earpiece":{
-        "filterProperty": "_parent",
-        "filterValues": [
-            "5a341c4086f77401f2541505"
-        ],
+    "all_helmets_dont_block_earpiece": {
+        "query": {
+            "key": "_parent",
+            "values": [
+                "5a341c4086f77401f2541505"
+            ]
+        },
         "set": {
             "BlocksEarpiece": false
         }
     },
-    "faceshields_dont_block_nvg":{
-        "filterProperty": "_parent",
-        "filterValues": [
-            "57bef4c42459772e8d35a53b"
-        ],
+    "faceshields_dont_block_nvg": {
+        "query": {
+            "key": "_parent",
+            "values": [
+                "57bef4c42459772e8d35a53b"
+            ]
+        },
         "set": {
             "ConflictingItems": []
         }
     },
-    "faceshields_medUseTime_test":{
-        "filterProperty": "_parent",
-        "filterValues": [
-            "57bef4c42459772e8d35a53b"
-        ],
-        "set": {
-            "medUseTime": "cock"
+    "some_762x51_recoil_tweaks": {
+        "query": {
+            "key": "_name",
+            "values": [
+                "weapon_dsa_sa58_762x51",
+                "weapon_dt_mdr_762x51"
+            ]
+        },
+        "multiply": {
+            "RecoilForceUp": 0.55,
+            "RecoilForceBack": 0.55
+        }
+    },
+    "svds_tweaks": {
+        "query": {
+            "key": "_name",
+            "values": [
+                "weapon_izhmash_svd_s_762x54"
+            ]
+        },
+        "multiply": {
+            "RecoilForceUp": 0.55,
+            "RecoilForceBack": 0.55
+        }
+    },
+    "9x39_tweaks": {
+        "query": {
+            "key": "ammoCaliber",
+            "values": [
+                "Caliber9x39"
+            ]
+        },
+        "multiply": {
+            "RecoilForceUp": 0.85,
+            "RecoilForceBack": 0.85
+        }
+    },
+    "pistol_tweaks": {
+        "query": {
+            "key": "weapClass",
+            "values": [
+                "pistol"
+            ]
+        },
+        "multiply": {
+            "RecoilForceUp": 0.15,
+            "RecoilForceBack": 0.15
+        }
+    },
+    "backpacks_weight_less": {
+        "query": {
+            "key": "_parent",
+            "values": [
+                "5448e53e4bdc2d60728b4567"
+            ]
+        },
+        "multiply": {
+            "Weight": 0.25
         }
     }
 }

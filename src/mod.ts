@@ -10,10 +10,12 @@ import { VerboseLogger } from "./verbose_logger";
 import { Applicator, ApplicatorChangeType, ApplicatorLogFormat } from "./applicator";
 import { LogTextColor } from "@spt-aki/models/spt/logging/LogTextColor";
 import { LogBackgroundColor } from "@spt-aki/models/spt/logging/LogBackgroundColor";
+import { Expression, Query } from "./query";
+
+
 
 type Selector = {
-    filterProperty: string;
-    filterValues: any[];
+    query: Expression,
     multiply?: object;
     set?: object;
     priority?: number;
@@ -155,8 +157,11 @@ class ItemTweaker implements IPostDBLoadMod
             {
                 const itemName = overwritesMetaData.get(itemId).name;
                 const overwriteSelector: Selector = {
-                    filterProperty: "_id",
-                    filterValues: [itemId],
+                    query: {
+                        key: "_id",
+                        operation: "equals",
+                        values: [itemId]
+                    },
                     multiply: manualOverwrite[itemName],
                     set: manualOverwrite[itemName]
                 }
@@ -185,9 +190,9 @@ class ItemTweaker implements IPostDBLoadMod
         let changedItemCount = 0;
         const changedItemIds: string[] = [];
 
-        const filterProperty = selector.filterProperty;
-        const filterValues = selector.filterValues;
-        const filterByPrivateProp: boolean = this.isPrivateProperty(filterProperty);
+        // const filterProperty = selector.filterProperty;
+        // const filterValues = selector.filterValues;
+        // const filterByPrivateProp: boolean = this.isPrivateProperty(filterProperty);
 
         // Not really needed but can help avoid needless iterations over the database
         const itemIdSource = affectedItemIds.length > 0 ? affectedItemIds : Object.keys(dbItems);
@@ -200,16 +205,21 @@ class ItemTweaker implements IPostDBLoadMod
                 const properties = item._props;
                 const name = item._name;
             
-                const filterValue = filterByPrivateProp ? item[filterProperty] : properties[filterProperty];
+                // const filterValue = filterByPrivateProp ? item[filterProperty] : properties[filterProperty];
                 // If we filter not by name then show the filter value in the header along with the name and id
                 // There are several names in the item object, check for both '_name' and 'Name'
                 // The '_name' private property is more accurate as there are incorrect names or dublicates set to '_props.Name'
-                const filterValueHeader: string = name != filterValue && properties.Name != filterValue ? ` - ${filterProperty}: ${filterValue}` : "";
+                // const filterValueHeader: string = name != filterValue && properties.Name != filterValue ? ` - ${filterProperty}: ${filterValue}` : "";
+                /**
+                 * @deprecated Legacy constant. Eqauls to "" since the implementation of query trees.
+                 */
+                const filterValueHeader = "";
 
                 if (validatorFunc(item))
                 {
                     // Check if item matches the selector
-                    if (filterValue != null && filterValues.includes(filterValue)) 
+                    // if (filterValue != null && filterValues.includes(filterValue)) 
+                    if (Query.evaluateQuery(selector.query, item)) 
                     {
                         if (selector.multiply != null || selector.set != null)
                         {
@@ -247,20 +257,21 @@ class ItemTweaker implements IPostDBLoadMod
     private getAffectedItemIds(dbItems: IDatabaseTables, selector: Selector, validatorFunc: (item: any) => boolean = this.isValidItem): string[]
     {
         const affectedItemIds: string[] = [];
-        const filterProperty = selector.filterProperty;
-        const filterValues = selector.filterValues;
+        // const filterProperty = selector.filterProperty;
+        // const filterValues = selector.filterValues;
         for (const id in dbItems) 
         {
             const item = dbItems[id];
             const properties = item._props;           
-            const filterByPrivateProp: boolean = this.isPrivateProperty(filterProperty);
-            const filterValue = filterByPrivateProp ? item[filterProperty] : properties[filterProperty];
+            // const filterByPrivateProp: boolean = this.isPrivateProperty(filterProperty);
+            // const filterValue = filterByPrivateProp ? item[filterProperty] : properties[filterProperty];
             // There are several names in the item object, check for both '_name' and 'Name'
             // The '_name' private property is more accurate as there are incorrect names or dublicates set to '_props.Name'
             if (validatorFunc(item))
             {
                 // Check if item matches the selector
-                if (filterValue != null && filterValues.includes(filterValue)) 
+                // if (filterValue != null && filterValues.includes(filterValue)) 
+                if (Query.evaluateQuery(selector.query, item)) 
                 {
                     if (selector.multiply != null || selector.set != null)
                     {
@@ -287,13 +298,12 @@ class ItemTweaker implements IPostDBLoadMod
      */
     private getSelectorMetaData(dbItems: IDatabaseTables, selector: Selector, logName?: string): SelectorMetaData
     {
-        const filterProperty = selector.filterProperty;
-        const filterValues = selector.filterValues;
         const multiply = selector.multiply;
         const set = selector.set;
 
         // Make sure that user's selector has a proper JSON structure and types
-        if (filterProperty != null && filterValues != null && typeof filterProperty === "string" && Array.isArray(filterValues))
+        // if (filterProperty != null && filterValues != null && typeof filterProperty === "string" && Array.isArray(filterValues))
+        if (Query.isQuery(selector.query))
         {
             // Selector having no changes is not critical
             if (multiply === undefined && set === undefined)
@@ -301,8 +311,8 @@ class ItemTweaker implements IPostDBLoadMod
                 if (logName !== undefined)
                     this.logger.explicitWarning(`[WARNING] "${logName}" does nothing. Both it's "multiply" and "set" properties are undefined.`);
             }
-            // Make sure "multiply" and "set" properties are objects
-            if (multiply === null || multiply != null && multiply.constructor.name !== "Object" || set === null || set != null && set.constructor.name !== "Object")
+            // Make sure "multiply" and "set" properties are objects. Remember that being "undefined" is allowed.
+            if (multiply === null || (multiply != null && multiply.constructor.name !== "Object") || set === null || (set != null && set.constructor.name !== "Object"))
             {
                 if (logName !== undefined)
                     this.logger.explicitError(`[ERROR] "${logName}" properties "multiply"(${JSON.stringify(multiply)}) and "set"(${JSON.stringify(set)}) must be objects!`);
@@ -310,10 +320,9 @@ class ItemTweaker implements IPostDBLoadMod
             else 
             {
                 const matchingItemIds = this.getAffectedItemIds(dbItems, selector);
-                if (matchingItemIds.length < 1) 
+                if (matchingItemIds.length < 1 && (multiply !== undefined || set !== undefined)) // Check for undefined multiply/set propertis to avoid duplicating basically the same message. 
                     if (logName !== undefined)
-                        this.logger.explicitWarning(`[WARNING] "${logName}" has no matches. Check if "filterProperty"(${selector.filterProperty}) and "filterValues"(${selector.filterValues.toString().replace(/,/g, ", ")}), or multiplied/set property names are correct. For more info enable "verbose" in config.`);
-
+                        this.logger.explicitWarning(`[WARNING] "${logName}" has no matches. Check your query parameters and if multiplied/set property names and value types are correct. For more info enable "verbose" in config.`);
                 return {
                     matchingIds: matchingItemIds,
                     changedProperties: [...new Set(Object.keys(selector.multiply ?? {}).concat(Object.keys(selector.set ?? {})))],
@@ -328,7 +337,8 @@ class ItemTweaker implements IPostDBLoadMod
         else
         {
             if (logName !== undefined)
-                this.logger.explicitError(`[ERROR] "${logName}" properties "filterProperty"(${JSON.stringify(filterProperty)}) and "filterValues"(${JSON.stringify(filterValues)}) have to be defined and must have a type "string" and "Array" accordingly!`);
+                // this.logger.explicitError(`[ERROR] "${logName}" properties "filterProperty"(${JSON.stringify(filterProperty)}) and "filterValues"(${JSON.stringify(filterValues)}) have to be defined and must have a type "string" and "Array" accordingly!`);
+                this.logger.explicitError(`[ERROR] "${logName}" query has wrong structure. Check if every expression in the tree has proper structure!`);
         }
         return {
             matchingIds: [],
@@ -337,6 +347,8 @@ class ItemTweaker implements IPostDBLoadMod
         }
     }
 
+    
+
     // Item validation functions
 
     /**
@@ -344,7 +356,7 @@ class ItemTweaker implements IPostDBLoadMod
      * @param item Item to validate.
      * @returns Validation result (true|false).
      */
-    public isValidWeaponItem(item: any): boolean
+    private isValidWeaponItem(item: any): boolean
     {
         return item != null && item._type === "Item" && item._props != null && item._props.weapClass != null && item._name != null;
     }
@@ -354,7 +366,7 @@ class ItemTweaker implements IPostDBLoadMod
      * @param item Item to validate.
      * @returns Validation result. (true|false)
      */
-    public isValidArmorItem(item: any): boolean
+    private isValidArmorItem(item: any): boolean
     {
         return item != null && item._type === "Item" && item._props != null && item._props.ArmorType != null && item._name != null;
     }
@@ -364,17 +376,18 @@ class ItemTweaker implements IPostDBLoadMod
      * @param item Item to validate
      * @returns Validation result. (true|false)
      */
-    public isValidItem(item: any): boolean
+    private isValidItem(item: any): boolean
     {
         return item != null && item._type === "Item" && item._props != null && item._name != null;
     }
     
     /**
+     * @deprecated
      * Primitive check to see where the property is private or not. Private properties are designated with an underscore.
      * @param propertyName String of a property name to be checked.
      * @returns Check result.
      */
-    public isPrivateProperty(propertyName: string)
+    private isPrivateProperty(propertyName: string)
     {
         return propertyName.charAt(0) === "_";
     }
