@@ -49,7 +49,7 @@ class ItemTweaker implements IPostDBLoadMod
         this.logger = new VerboseLogger(container);
         this.applicator = new Applicator(this.logger);
 
-        this.logger.explicitLog("Item Tweaker: Starting...", LogTextColor.BLACK, LogBackgroundColor.WHITE);
+        this.logger.explicitInfo("Item Tweaker: Starting...");
 
         this.logger.explicitInfo("Initialization...");
         const databaseServer = container.resolve<DatabaseServer>("DatabaseServer");
@@ -174,69 +174,44 @@ class ItemTweaker implements IPostDBLoadMod
             }
         }
 
-        this.logger.explicitLog("Item Tweaker: Completed", LogTextColor.BLACK, LogBackgroundColor.WHITE);
+        this.logger.explicitInfo("Item Tweaker: Completed");
     }
 
     /**
      * Applies a selector to database items.
      * @param dbItems Database tables of the server which contain items.
      * @param selector A selector that will be applied.
-     * @param affectedItemIds An optional array of item IDs which should be affected by this selector. Intended as optimization to use with SelectorMetaData.matchingIds or when changing one item only.
+     * @param itemIds An optional array of item IDs to iterate over. Intended as optimization to be used with SelectorMetaData.matchingIds/affectedIds or when changing one item only.
      * @param ignoreIds An optional array of item IDs to ignore. Initially designed to preserve "manual_overwrite.JSON" priority and resolve conflicts if there are any.
      * @param validatorFunc Optional, if the default 'isValidItem' validator is not enough.
      * @returns An object with the operation result: change count, changed item count, array of changed item IDs
      */
     // In applicatorFunc specification leave logFormat as required parameter to incentivize the use of ApplicatorLogFormat.LIST_ENTRY.
-    private applySelector(dbItems: IDatabaseTables, selector: Selector, affectedItemIds: string[], ignoreIds: string[] = [], validatorFunc: (item: any) => boolean = this.isValidItem): {changeCount: number, changedItemCount: number, changedItemIds: string[]}
+    private applySelector(dbItems: IDatabaseTables, selector: Selector, itemIds: string[], ignoreIds: string[] = [], validatorFunc: (item: any) => boolean = this.isValidItem): {changeCount: number, changedItemCount: number, changedItemIds: string[]}
     {
         let changeCount = 0;
         let changedItemCount = 0;
         const changedItemIds: string[] = [];
 
-        // const filterProperty = selector.filterProperty;
-        // const filterValues = selector.filterValues;
-        // const filterByPrivateProp: boolean = this.isPrivateProperty(filterProperty);
-
-        // Not really needed but can help avoid needless iterations over the database
-        const itemIdSource = affectedItemIds ?? Object.keys(dbItems);
-        for (const id of itemIdSource) 
+        for (const id of itemIds ?? Object.keys(dbItems)) 
         {
-            // ignoreIds is used to ignore items which are present in "manual_overwrite.JSON" to preserve their priority
             if (!ignoreIds.includes(id))
             {
                 const item = dbItems[id];
                 const properties = item._props;
                 const name = item._name;
             
-                // const filterValue = filterByPrivateProp ? item[filterProperty] : properties[filterProperty];
-                // If we filter not by name then show the filter value in the header along with the name and id
-                // There are several names in the item object, check for both '_name' and 'Name'
-                // The '_name' private property is more accurate as there are incorrect names or dublicates set to '_props.Name'
-                // const filterValueHeader: string = name != filterValue && properties.Name != filterValue ? ` - ${filterProperty}: ${filterValue}` : "";
-                /**
-                 * @deprecated Legacy constant. Eqauls to "" since the implementation of query trees.
-                 */
-                const filterValueHeader = "";
-                if (validatorFunc(item) && Query.evaluateQuery(selector.query, item))
+                if (validatorFunc(item) && Query.evaluateQuery(selector.query, item) && (selector.multiply != null || selector.set != null))
                 {
-                    if (selector.multiply != null || selector.set != null)
+                    this.logger.log(`Item: ${name} - id: ${id}`, LogTextColor.CYAN);
+                    const multiplyResult = this.applicator.tryToApplyAllChanges(properties, selector.multiply, ApplicatorChangeType.MULTIPLY, ApplicatorLogFormat.LIST_ENTRY);
+                    const setValueResult = this.applicator.tryToApplyAllChanges(properties, selector.set, ApplicatorChangeType.SET_VALUE, ApplicatorLogFormat.LIST_ENTRY);
+                    const totalResult = multiplyResult+setValueResult;
+                    if (totalResult > 0)
                     {
-                        this.logger.log(`Item: ${name}${filterValueHeader} - id: ${id}`, LogTextColor.CYAN);
-                        let multiplyResult = 0;
-                        let setValueResult = 0;
-
-                        if (selector.multiply != null)
-                            multiplyResult += this.applicator.tryToApplyAllChanges(properties, selector.multiply, ApplicatorChangeType.MULTIPLY, ApplicatorLogFormat.LIST_ENTRY);
-                        if (selector.set != null)
-                            setValueResult += this.applicator.tryToApplyAllChanges(properties, selector.set, ApplicatorChangeType.SET_VALUE, ApplicatorLogFormat.LIST_ENTRY);
-
-                        const totalResult = multiplyResult+setValueResult;
-                        if (totalResult > 0)
-                        {
-                            changeCount+= totalResult;
-                            ++changedItemCount;
-                            changedItemIds.push(id);
-                        }
+                        changeCount+= totalResult;
+                        ++changedItemCount;
+                        changedItemIds.push(id);
                     }
                 }
             }
@@ -314,7 +289,7 @@ class ItemTweaker implements IPostDBLoadMod
                     if (logName !== undefined)
                         this.logger.explicitWarning(`[WARNING] "${logName}" has ${matchingItemIds.length} no matching items. Check your query parameters.`);
                 }
-                else if (affectedItemIds.length < 1)
+                else if (affectedItemIds.length < 1 && (multiply !== undefined || set !== undefined))
                 {
                     if (logName !== undefined)
                         this.logger.explicitWarning(`[WARNING] "${logName}" query matches ${matchingItemIds.length} items but none are affected. Check if multiply/set value types are correct. For more info enable "verbose" in config.`);
