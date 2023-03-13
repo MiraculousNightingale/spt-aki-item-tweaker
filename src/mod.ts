@@ -15,7 +15,7 @@ import { Expression, Query } from "./query";
 
 
 type Selector = {
-    query: Expression,
+    query: Expression;
     multiply?: object;
     set?: object;
     priority?: number;
@@ -23,6 +23,7 @@ type Selector = {
 
 type SelectorMetaData = {
     matchingIds: string[];
+    affectedIds: string[];
     changedProperties: string[];
     priority?: number;
     isValid: boolean;
@@ -139,7 +140,9 @@ class ItemTweaker implements IPostDBLoadMod
                     const ignoreOvewriteIds = [...overwritesMetaData.keys()];
 
                     this.logger.log(`Applying "${selectorKey}"...`, LogTextColor.BLUE);
-                    const tweakResult = this.applySelector(dbItems, selector, selectorMeta.matchingIds, ignoreOvewriteIds);
+                    // If selector affects no items go through matching items to show errors. No changes will be applied anyway.
+                    const itemIds = selectorMeta.affectedIds.length < 1 ? selectorMeta.matchingIds : selectorMeta.affectedIds;
+                    const tweakResult = this.applySelector(dbItems, selector, itemIds, ignoreOvewriteIds);
 
                     this.logger.explicitInfo(`"${selectorKey}" made ${tweakResult.changeCount} changes to ${tweakResult.changedItemCount} items`);
                 }
@@ -184,7 +187,7 @@ class ItemTweaker implements IPostDBLoadMod
      * @returns An object with the operation result: change count, changed item count, array of changed item IDs
      */
     // In applicatorFunc specification leave logFormat as required parameter to incentivize the use of ApplicatorLogFormat.LIST_ENTRY.
-    private applySelector(dbItems: IDatabaseTables, selector: Selector, affectedItemIds: string[] = [], ignoreIds: string[] = [], validatorFunc: (item: any) => boolean = this.isValidItem): {changeCount: number, changedItemCount: number, changedItemIds: string[]}
+    private applySelector(dbItems: IDatabaseTables, selector: Selector, affectedItemIds: string[], ignoreIds: string[] = [], validatorFunc: (item: any) => boolean = this.isValidItem): {changeCount: number, changedItemCount: number, changedItemIds: string[]}
     {
         let changeCount = 0;
         let changedItemCount = 0;
@@ -195,7 +198,7 @@ class ItemTweaker implements IPostDBLoadMod
         // const filterByPrivateProp: boolean = this.isPrivateProperty(filterProperty);
 
         // Not really needed but can help avoid needless iterations over the database
-        const itemIdSource = affectedItemIds.length > 0 ? affectedItemIds : Object.keys(dbItems);
+        const itemIdSource = affectedItemIds ?? Object.keys(dbItems);
         for (const id of itemIdSource) 
         {
             // ignoreIds is used to ignore items which are present in "manual_overwrite.JSON" to preserve their priority
@@ -214,31 +217,25 @@ class ItemTweaker implements IPostDBLoadMod
                  * @deprecated Legacy constant. Eqauls to "" since the implementation of query trees.
                  */
                 const filterValueHeader = "";
-
-                if (validatorFunc(item))
+                if (validatorFunc(item) && Query.evaluateQuery(selector.query, item))
                 {
-                    // Check if item matches the selector
-                    // if (filterValue != null && filterValues.includes(filterValue)) 
-                    if (Query.evaluateQuery(selector.query, item)) 
+                    if (selector.multiply != null || selector.set != null)
                     {
-                        if (selector.multiply != null || selector.set != null)
+                        this.logger.log(`Item: ${name}${filterValueHeader} - id: ${id}`, LogTextColor.CYAN);
+                        let multiplyResult = 0;
+                        let setValueResult = 0;
+
+                        if (selector.multiply != null)
+                            multiplyResult += this.applicator.tryToApplyAllChanges(properties, selector.multiply, ApplicatorChangeType.MULTIPLY, ApplicatorLogFormat.LIST_ENTRY);
+                        if (selector.set != null)
+                            setValueResult += this.applicator.tryToApplyAllChanges(properties, selector.set, ApplicatorChangeType.SET_VALUE, ApplicatorLogFormat.LIST_ENTRY);
+
+                        const totalResult = multiplyResult+setValueResult;
+                        if (totalResult > 0)
                         {
-                            this.logger.log(`Item: ${name}${filterValueHeader} - id: ${id}`, LogTextColor.CYAN);
-                            let multiplyResult = 0;
-                            let setValueResult = 0;
-
-                            if (selector.multiply != null)
-                                multiplyResult += this.applicator.tryToApplyAllChanges(properties, selector.multiply, ApplicatorChangeType.MULTIPLY, ApplicatorLogFormat.LIST_ENTRY);
-                            if (selector.set != null)
-                                setValueResult += this.applicator.tryToApplyAllChanges(properties, selector.set, ApplicatorChangeType.SET_VALUE, ApplicatorLogFormat.LIST_ENTRY);
-
-                            const totalResult = multiplyResult+setValueResult;
-                            if (totalResult > 0)
-                            {
-                                changeCount+= totalResult;
-                                ++changedItemCount;
-                                changedItemIds.push(id);
-                            }
+                            changeCount+= totalResult;
+                            ++changedItemCount;
+                            changedItemIds.push(id);
                         }
                     }
                 }
@@ -252,41 +249,32 @@ class ItemTweaker implements IPostDBLoadMod
      * @param dbItems Database tables of the server which contain items.
      * @param selector A selector that will be applied.
      * @param validatorFunc Optional, if the default 'isValidItem' validator is not enough.
-     * @returns An object with the operation result: change count, changed item count, array of changed item IDs
+     * @returns Array of item IDs.
      */
     private getAffectedItemIds(dbItems: IDatabaseTables, selector: Selector, validatorFunc: (item: any) => boolean = this.isValidItem): string[]
     {
-        const affectedItemIds: string[] = [];
-        // const filterProperty = selector.filterProperty;
-        // const filterValues = selector.filterValues;
-        for (const id in dbItems) 
+        return Object.keys(dbItems).filter(itemId => 
         {
-            const item = dbItems[id];
-            const properties = item._props;           
-            // const filterByPrivateProp: boolean = this.isPrivateProperty(filterProperty);
-            // const filterValue = filterByPrivateProp ? item[filterProperty] : properties[filterProperty];
-            // There are several names in the item object, check for both '_name' and 'Name'
-            // The '_name' private property is more accurate as there are incorrect names or dublicates set to '_props.Name'
-            if (validatorFunc(item))
+            const item = dbItems[itemId];
+            const properties = item._props;
+            if (validatorFunc(item) && Query.evaluateQuery(selector.query, item))
             {
-                // Check if item matches the selector
-                // if (filterValue != null && filterValues.includes(filterValue)) 
-                if (Query.evaluateQuery(selector.query, item)) 
-                {
-                    if (selector.multiply != null || selector.set != null)
-                    {
-                        let isAffectedItem = false;
-                        if (selector.multiply != null)
-                            if (this.applicator.canApplyAnyChanges(properties, selector.multiply, ApplicatorChangeType.MULTIPLY)) isAffectedItem = true;
-                        if (selector.set != null)
-                            if (this.applicator.canApplyAnyChanges(properties, selector.set, ApplicatorChangeType.SET_VALUE)) isAffectedItem = true;
-                        if (isAffectedItem)
-                            affectedItemIds.push(id);
-                    }
-                }
+                return this.applicator.canApplyAnyChanges(properties, selector.multiply, ApplicatorChangeType.MULTIPLY) ||
+                    this.applicator.canApplyAnyChanges(properties, selector.set, ApplicatorChangeType.SET_VALUE);
             }
-        }
-        return affectedItemIds;
+        });
+    }
+
+    /**
+     * Get an array of items which match the selector query.
+     * @param dbItems Database tables of the server which contain items.
+     * @param selector A selector that will be applied.
+     * @param validatorFunc Optional, if the default 'isValidItem' validator is not enough.
+     * @returns Array of item IDs.
+     */
+    private getMatchingItemIds(dbItems: IDatabaseTables, selector: Selector, validatorFunc: (item: any) => boolean = this.isValidItem): string[]
+    {
+        return Object.keys(dbItems).filter(itemId => validatorFunc(dbItems[itemId]) && Query.evaluateQuery(selector.query, dbItems[itemId]));
     }
 
     /**
@@ -319,12 +307,21 @@ class ItemTweaker implements IPostDBLoadMod
             }
             else 
             {
-                const matchingItemIds = this.getAffectedItemIds(dbItems, selector);
+                const matchingItemIds = this.getMatchingItemIds(dbItems, selector);
+                const affectedItemIds = this.getAffectedItemIds(dbItems, selector);
                 if (matchingItemIds.length < 1 && (multiply !== undefined || set !== undefined)) // Check for undefined multiply/set propertis to avoid duplicating basically the same message. 
+                {
                     if (logName !== undefined)
-                        this.logger.explicitWarning(`[WARNING] "${logName}" has no matches. Check your query parameters and if multiplied/set property names and value types are correct. For more info enable "verbose" in config.`);
+                        this.logger.explicitWarning(`[WARNING] "${logName}" has ${matchingItemIds.length} no matching items. Check your query parameters.`);
+                }
+                else if (affectedItemIds.length < 1)
+                {
+                    if (logName !== undefined)
+                        this.logger.explicitWarning(`[WARNING] "${logName}" query matches ${matchingItemIds.length} items but none are affected. Check if multiply/set value types are correct. For more info enable "verbose" in config.`);
+                }
                 return {
                     matchingIds: matchingItemIds,
+                    affectedIds: affectedItemIds,
                     changedProperties: [...new Set(Object.keys(selector.multiply ?? {}).concat(Object.keys(selector.set ?? {})))],
                     //Potentially priority number can be used to resolve conflicts
                     //though I can't see right now how conflicts could prevent you 
@@ -342,6 +339,7 @@ class ItemTweaker implements IPostDBLoadMod
         }
         return {
             matchingIds: [],
+            affectedIds: [],
             changedProperties: [],
             isValid: false
         }

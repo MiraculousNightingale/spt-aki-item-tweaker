@@ -31,16 +31,17 @@ class Query
         //Maybe null/undefined should be checked
         if (propValue == null) return false;
 
-        if (values.some(value => propType !== typeof value))
+        if (values.some(value => propType !== typeof value) && !Array.isArray(propValue))
         {
-            throw (`One or more values don't match type ${propType}`);
+            throw (`Query values "${values.filter(value => propType !== typeof value)}" with key "${key}" don't match target property type ${propType}`);
         }
 
         let result = null;
-        const testMethod = strict ? "every" : "some";
+        // const testMethod = strict ? "every" : "some";
+        const testMethod = strict ? values.every : values.some;
         if (operation === "equals")
         {
-            result = values[testMethod](value => JSON.stringify(propValue) === JSON.stringify(value));
+            result = testMethod.call(values, (value: any) => JSON.stringify(propValue) === JSON.stringify(value)); // Support array and object comparisons with JSON.stringify
             return negation ? !result : result;
         }
         switch (propType)
@@ -48,24 +49,24 @@ class Query
             case "string":
                 switch (operation)
                 {
-                    case "contains": result = values[testMethod](value => new RegExp(value + "").test(propValue + "")); break;
-                    case "starts_with": result = values[testMethod](value => new RegExp("^" + value + "").test(propValue + "")); break;
+                    case "contains": result = testMethod.call(values, (value: string) => new RegExp(value + "").test(propValue + "")); break;
+                    case "starts_with": result = testMethod.call(values, (value: string) => new RegExp("^" + value + "").test(propValue + "")); break;
                         // Implement ends_with
-                    case "ends_with": result = values[testMethod](value => new RegExp("" + value + "$").test(propValue + "")); break;
-                    default: throw (`Can't apply "${operation}" operation to type "${propType}"`);
+                    case "ends_with": result = testMethod.call(values, (value: string) => new RegExp("" + value + "$").test(propValue + "")); break;
+                    default: throw (`Can't apply "${operation}" operation to object property "${key}" with type "${propType}"`);
                 }
                 break;
             case "number":
                 switch (operation)
                 {
-                    case "greater_than": result = values[testMethod](value => propValue > value); break;
-                    case "less_than": result = values[testMethod](value => propValue < value); break;
-                    default: throw (`Can't apply "${operation}" operation to type "${propType}"`);
+                    case "greater_than": result = testMethod.call(values, (value: number) => propValue > value); break;
+                    case "less_than": result = testMethod.call(values, (value: number) => propValue < value); break;
+                    default: throw (`Can't apply "${operation}" operation to object property "${key}" with type "${propType}"`);
                 }
                 break;
             // Add support for "contains" operation to check arrays or objects
-            case "object": throw (`Can't apply "${operation}" operation to type "${propType}"`);
-            default: throw (`You shouldn't really reach this point. What kind of type is "${propType}"?`);
+            case "object": throw (`Can't apply "${operation}" operation to object property "${key}" with type "${propType}"`);
+            default: throw (`You shouldn't really reach this point. Query key is "${key}", values are "${values}. What kind of type is "${propType}"?`);
         }
         if (result === null) throw ("Evaluation didn't reach the proper test function.");
         return negation ? !result : result;
@@ -76,7 +77,7 @@ class Query
         const negation = expression.negation ?? false; 
         const { condition, expressions } = expression;
         const testMethod = condition == "and" ? expressions.every : expressions.some;
-        const result = testMethod.call(expressions, (expression) => 
+        const result = testMethod.call(expressions, (expression: Expression) => 
         {
             return this.evaluateQuery(expression, obj);
         });
