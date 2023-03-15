@@ -414,6 +414,15 @@ class Applicator
         if (!rest.length) targetObj[head] = value;
         else this.setNestedProperty(targetObj[head], rest.join("."), value);
     }
+
+    public static filterObjectProperties(targetObj: object, predicate: (key: string) => boolean): object
+    {
+        return Object.keys(targetObj).reduce((accum, key) => 
+        {
+            if (predicate(key)) accum[key] = targetObj[key];
+            return accum;
+        }, {}); 
+    }
     
 }
 

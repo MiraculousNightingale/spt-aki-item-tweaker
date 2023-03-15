@@ -28,5 +28,13 @@
                 "5c0e842486f77443a74d2976"
             ]
         }
+    },
+    "item_equipment_helmet_rys_t": {
+        "set": {
+            "Slots.0._props.filters.0.Filter": [
+                "5f60c85b58eff926626a60f7",
+                "5c0e842486f77443a74d2976"
+            ]
+        }
     }
 }

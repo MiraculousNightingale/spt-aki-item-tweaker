@@ -142,7 +142,7 @@ class ItemTweaker implements IPostDBLoadMod
                     this.logger.log(`Applying "${selectorKey}"...`, LogTextColor.BLUE);
                     // If selector affects no items go through matching items to show errors. No changes will be applied anyway.
                     const itemIds = selectorMeta.affectedIds.length < 1 ? selectorMeta.matchingIds : selectorMeta.affectedIds;
-                    const tweakResult = this.applySelector(dbItems, selector, itemIds, ignoreOvewriteIds);
+                    const tweakResult = this.applySelector(dbItems, selector, itemIds, overwritesMetaData);
 
                     this.logger.explicitInfo(`"${selectorKey}" made ${tweakResult.changeCount} changes to ${tweakResult.changedItemCount} items`);
                 }
@@ -182,12 +182,12 @@ class ItemTweaker implements IPostDBLoadMod
      * @param dbItems Database tables of the server which contain items.
      * @param selector A selector that will be applied.
      * @param itemIds An optional array of item IDs to iterate over. Intended as optimization to be used with SelectorMetaData.matchingIds/affectedIds or when changing one item only.
-     * @param ignoreIds An optional array of item IDs to ignore. Initially designed to preserve "manual_overwrite.JSON" priority and resolve conflicts if there are any.
+     * @param overwriteMetaMap An optional array of item IDs to ignore. Initially designed to preserve "manual_overwrite.JSON" priority and resolve conflicts if there are any.
      * @param validatorFunc Optional, if the default 'isValidItem' validator is not enough.
      * @returns An object with the operation result: change count, changed item count, array of changed item IDs
      */
     // In applicatorFunc specification leave logFormat as required parameter to incentivize the use of ApplicatorLogFormat.LIST_ENTRY.
-    private applySelector(dbItems: IDatabaseTables, selector: Selector, itemIds: string[], ignoreIds: string[] = [], validatorFunc: (item: any) => boolean = this.isValidItem): {changeCount: number, changedItemCount: number, changedItemIds: string[]}
+    private applySelector(dbItems: IDatabaseTables, selector: Selector, itemIds: string[], overwriteMetaMap: Map<string, OverwriteMetaData> = new Map<string, OverwriteMetaData>(), validatorFunc: (item: any) => boolean = this.isValidItem): {changeCount: number, changedItemCount: number, changedItemIds: string[]}
     {
         let changeCount = 0;
         let changedItemCount = 0;
@@ -195,24 +195,29 @@ class ItemTweaker implements IPostDBLoadMod
 
         for (const id of itemIds ?? Object.keys(dbItems)) 
         {
-            if (!ignoreIds.includes(id))
-            {
-                const item = dbItems[id];
-                const properties = item._props;
-                const name = item._name;
+            const item = dbItems[id];
+            const properties = item._props;
+            const name = item._name;
             
-                if (validatorFunc(item) && Query.evaluateQuery(selector.query, item) && (selector.multiply != null || selector.set != null))
+            if (validatorFunc(item) && Query.evaluateQuery(selector.query, item) && (selector.multiply != null || selector.set != null))
+            {
+                this.logger.log(`Item: ${name} - id: ${id}`, LogTextColor.CYAN);
+
+                // If item is present in overwrite filter out properties to let manual overwrite take priority
+                // Not the most precise check, but we don't really care if "changedProperties" were multiplied or set.
+                const isInOverwrite = overwriteMetaMap.has(id);
+                const multiply = isInOverwrite ? Applicator.filterObjectProperties(selector.multiply ?? {}, key => !overwriteMetaMap.get(id).changedProperties.includes(key)) : selector.multiply;
+                const set = isInOverwrite ? Applicator.filterObjectProperties(selector.set ?? {}, key => !overwriteMetaMap.get(id).changedProperties.includes(key)) : selector.set;
+                // const add - future feature for arrays
+                // const remove - future feature for arrays
+                const multiplyResult = this.applicator.tryToApplyAllChanges(properties, multiply, ApplicatorChangeType.MULTIPLY, ApplicatorLogFormat.LIST_ENTRY);
+                const setValueResult = this.applicator.tryToApplyAllChanges(properties, set, ApplicatorChangeType.SET_VALUE, ApplicatorLogFormat.LIST_ENTRY);
+                const totalResult = multiplyResult+setValueResult;
+                if (totalResult > 0)
                 {
-                    this.logger.log(`Item: ${name} - id: ${id}`, LogTextColor.CYAN);
-                    const multiplyResult = this.applicator.tryToApplyAllChanges(properties, selector.multiply, ApplicatorChangeType.MULTIPLY, ApplicatorLogFormat.LIST_ENTRY);
-                    const setValueResult = this.applicator.tryToApplyAllChanges(properties, selector.set, ApplicatorChangeType.SET_VALUE, ApplicatorLogFormat.LIST_ENTRY);
-                    const totalResult = multiplyResult+setValueResult;
-                    if (totalResult > 0)
-                    {
-                        changeCount+= totalResult;
-                        ++changedItemCount;
-                        changedItemIds.push(id);
-                    }
+                    changeCount+= totalResult;
+                    ++changedItemCount;
+                    changedItemIds.push(id);
                 }
             }
         }
