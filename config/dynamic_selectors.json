@@ -211,5 +211,29 @@
         "multiply": {
             "Recoil": 1.5
         }
+    },
+    "make_some_backpacks_bigger": {
+        "query": {
+            "condition": "and",
+            "expressions": [
+                {
+                    "key": "_parent",
+                    "values": [
+                        "5448e53e4bdc2d60728b4567"
+                    ]
+                },
+                {
+                    "key": "Grids.0._props.cellsV",
+                    "operation": "less_than",
+                    "values": [
+                        3
+                    ]
+                }
+            ]
+        },
+        "multiply": {
+            "Grids.0._props.cellsV": 2,
+            "Grids.0._props.cellsH": 2
+        }
     }
 }
