@@ -42,7 +42,6 @@ class Query
             }
 
             let result = null;
-            // const testMethod = strict ? "every" : "some";
             const testMethod = strict ? values.every : values.some;
             if (operation === "equals")
             {
@@ -56,9 +55,7 @@ class Query
                     {
                         case "contains": result = testMethod.call(values, (value: string) => new RegExp(value + "").test(propValue + "")); break;
                         case "starts_with": result = testMethod.call(values, (value: string) => new RegExp("^" + value + "").test(propValue + "")); break;
-                        // Implement ends_with
                         case "ends_with": result = testMethod.call(values, (value: string) => new RegExp("" + value + "$").test(propValue + "")); break;
-                        default: throw (`Can't apply "${operation}" operation to object property "${key}" with type "${propType}"`);
                     }
                     break;
                 case "number":
@@ -66,20 +63,29 @@ class Query
                     {
                         case "greater_than": result = testMethod.call(values, (value: number) => propValue > value); break;
                         case "less_than": result = testMethod.call(values, (value: number) => propValue < value); break;
-                        default: throw (`Can't apply "${operation}" operation to object property "${key}" with type "${propType}"`);
                     }
                     break;
-                    // Add support for "contains" operation to check arrays or objects
-                case "object": throw (`Can't apply "${operation}" operation to object property "${key}" with type "${propType}"`);
-                default: throw (`You shouldn't really reach this point. Query key is "${key}", values are "${values}. What kind of type is "${propType}"?`);
+                case "object": 
+                    if (Array.isArray(propValue))
+                    {
+                        switch (operation)
+                        {
+                            case "contains": result = testMethod.call(values, (value: any) => propValue.includes(value)); break;
+                        }
+                    }
+                    break;
+                // default: throw (`You shouldn't really reach this point. Query key is "${key}", values are "${values}. What kind of type is "${propType}"?`);
+                default: throw (`Can't apply "${operation}" operation to object property "${key}" of type "${propType}"`);
             }
-            if (result === null) throw ("Evaluation didn't reach the proper test function.");
+            if (result === null) throw ("Evaluation didn't reach the proper test function. Unknown type or operation.");
             return negation ? !result : result;
         }
         catch (error) 
         {
-            // Most likely an exception will be thrown by the getNestedProperty
-            return negation ? true : false;
+            // Most likely an exception will be thrown by the getNestedProperty.
+            // Due to the nature of items, some of them might not have all the objects specified in propertyPath
+            // so explicitly return false and skip over such items.
+            return false;
         }
     }
 

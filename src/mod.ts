@@ -165,8 +165,8 @@ class ItemTweaker implements IPostDBLoadMod
                         operation: "equals",
                         values: [itemId]
                     },
-                    multiply: manualOverwrite[itemName],
-                    set: manualOverwrite[itemName]
+                    multiply: manualOverwrite[itemName].multiply,
+                    set: manualOverwrite[itemName].set
                 }
                 this.logger.log(`Applying "${itemName}" overwrite...`, LogTextColor.BLUE);
                 const overwriteResult = this.applySelector(dbItems, overwriteSelector, [itemId]);

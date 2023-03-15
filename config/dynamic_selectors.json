@@ -58,35 +58,24 @@
             "BlocksEarpiece": false
         }
     },
-    "faceshields_dont_block_nvg": {
+    "armored_equipment_and_nvgs_block_nothing": {
         "query": {
             "key": "_parent",
             "values": [
-                "57bef4c42459772e8d35a53b"
+                "57bef4c42459772e8d35a53b",
+                "5a2c3a9486f774688b05e574"
             ]
         },
         "set": {
             "ConflictingItems": []
         }
     },
-    "some_762x51_recoil_tweaks": {
+    "sa58_mdr_762x51_recoil_tweaks": {
         "query": {
             "key": "_name",
             "values": [
                 "weapon_dsa_sa58_762x51",
                 "weapon_dt_mdr_762x51"
-            ]
-        },
-        "multiply": {
-            "RecoilForceUp": 0.55,
-            "RecoilForceBack": 0.55
-        }
-    },
-    "svds_tweaks": {
-        "query": {
-            "key": "_name",
-            "values": [
-                "weapon_izhmash_svd_s_762x54"
             ]
         },
         "multiply": {
@@ -175,20 +164,6 @@
             "Weight": 0.5
         }
     },
-    "double_size_raid_backpack": {
-        "query": {
-            "key": "_id",
-            "values": [
-                "5df8a4d786f77412672a1e3b"
-            ]
-        },
-        "multiply": {
-            "Grids.0._props.cellsV": 2
-        },
-        "set": {
-            "Grids.0._props.cellsH": 12
-        }
-    },
     "double_all_ammo_stack_size": {
         "query": {
             "key": "_parent",
@@ -198,42 +173,6 @@
         },
         "multiply": {
             "StackMaxSize": 2
-        }
-    },
-    "socom_mods_tweaks": {
-        "query": {
-            "key": "_name",
-            "operation": "contains",
-            "values": [
-                "socom_16"
-            ]
-        },
-        "multiply": {
-            "Recoil": 1.5
-        }
-    },
-    "make_some_backpacks_bigger": {
-        "query": {
-            "condition": "and",
-            "expressions": [
-                {
-                    "key": "_parent",
-                    "values": [
-                        "5448e53e4bdc2d60728b4567"
-                    ]
-                },
-                {
-                    "key": "Grids.0._props.cellsV",
-                    "operation": "less_than",
-                    "values": [
-                        3
-                    ]
-                }
-            ]
-        },
-        "multiply": {
-            "Grids.0._props.cellsV": 2,
-            "Grids.0._props.cellsH": 2
         }
     }
 }

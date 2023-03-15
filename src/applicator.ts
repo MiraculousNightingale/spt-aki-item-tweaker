@@ -164,7 +164,8 @@ class Applicator
         {
             const newValue = sourceObj[parameter];
             const oldValue = Applicator.getNestedProperty(targetObj, parameter);
-            if (oldValue !== newValue)
+            // Comparing stringify results will allow object and array comparison
+            if (JSON.stringify(oldValue) !== JSON.stringify(newValue))
             {
                 // targetObj[parameter] = newValue;
                 Applicator.setNestedProperty(targetObj, parameter, newValue);
